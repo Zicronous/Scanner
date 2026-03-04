@@ -70,12 +70,13 @@ function initDatabase() {
 
 // Save materials
 function saveMaterials() {
-    // Save to localStorage (for offline)
+
     localStorage.setItem('materials', JSON.stringify(materials));
     
-    // Save to Firebase (for multi-device sync)
-    if (typeof dbRef !== 'undefined') {
-        dbRef.set(materials);
+    if (typeof dbRef !== 'undefined' && navigator.onLine) {
+        dbRef.set(materials).catch(err => {
+            console.log('Firebase save failed - will retry later');
+        });
     }
     
     updateStats();
@@ -698,7 +699,6 @@ function onScanError(errorMessage) {
 }
 
 // ==================== CAMERA SCAN HANDLER ====================
-
 function onScanSuccess(decodedText, decodedResult) {
     console.log('Scan success:', decodedText);
     
@@ -718,10 +718,15 @@ function onScanSuccess(decodedText, decodedResult) {
         let oldStock = material.stock;
         material.stock += 1;
         
-        // Save to localStorage and Firebase
-        saveMaterials();
+        // 💾 SAVE IMMEDIATELY TO LOCALSTORAGE (works offline)
+        localStorage.setItem('materials', JSON.stringify(materials));
         
-        // Add activity
+        // Also save to Firebase if online (but don't wait for it)
+        if (typeof dbRef !== 'undefined' && navigator.onLine) {
+            dbRef.set(materials).catch(err => console.log('Offline - will sync later'));
+        }
+        
+        // Add activity to memory
         activities.unshift({
             id: Date.now(),
             action: 'RECEIVE',
@@ -733,7 +738,9 @@ function onScanSuccess(decodedText, decodedResult) {
             note: 'Scan receive',
             timestamp: new Date().toLocaleString()
         });
-        saveActivities();
+        
+        // 💾 SAVE ACTIVITIES IMMEDIATELY
+        localStorage.setItem('activities', JSON.stringify(activities));
         
         // Update UI
         updateTable();
