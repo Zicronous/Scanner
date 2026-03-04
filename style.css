@@ -492,3 +492,408 @@ tr:hover {
     align-items: center;
     justify-content: center;
 }
+
+/* Scan feedback animations */
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translate(-50%, 20px);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, 0);
+    }
+}
+
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+        transform: translate(-50%, 0);
+    }
+    to {
+        opacity: 0;
+        transform: translate(-50%, -10px);
+    }
+}
+
+/* ==================== MOBILE RESPONSIVE FIXES ==================== */
+
+/* Small phones (portrait) */
+@media screen and (max-width: 480px) {
+    .header {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+        padding: 15px;
+    }
+
+    .header h1 {
+        font-size: 20px;
+    }
+
+    .stats {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    .stats span {
+        font-size: 12px;
+        padding: 5px 10px;
+    }
+
+    .search-box {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .search-box input {
+        padding: 12px;
+        font-size: 16px;
+        width: 100%;
+    }
+
+    .search-box button {
+        padding: 12px;
+        font-size: 16px;
+        width: 100%;
+    }
+
+    .mobile-scan-controls {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .btn-camera {
+        width: 100%;
+        padding: 12px;
+        font-size: 16px;
+    }
+
+    .scan-hint {
+        text-align: center;
+        font-size: 12px;
+    }
+
+    .quick-actions button {
+        width: 100%;
+        padding: 15px;
+        font-size: 16px;
+    }
+
+    /* Selected material section */
+    .material-details {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+        margin-top: 15px;
+    }
+
+    .detail-item {
+        padding: 10px;
+    }
+
+    .detail-label {
+        font-size: 11px;
+    }
+
+    .detail-value {
+        font-size: 16px;
+    }
+
+    .material-actions {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+    }
+
+    .material-actions button {
+        width: 100%;
+        padding: 12px;
+        font-size: 14px;
+        min-width: auto;
+    }
+
+    /* Forms */
+    .form-card {
+        padding: 15px;
+    }
+
+    .form-card h3 {
+        font-size: 18px;
+    }
+
+    .form-card input,
+    .form-card select {
+        padding: 10px;
+        font-size: 14px;
+    }
+
+    .form-actions {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .form-actions button {
+        width: 100%;
+        padding: 12px;
+    }
+
+    /* Table */
+    .table-header {
+        flex-direction: column;
+        gap: 10px;
+        align-items: flex-start;
+    }
+
+    .table-controls {
+        width: 100%;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .table-controls select {
+        width: 100%;
+        padding: 10px;
+    }
+
+    .btn-print {
+        width: 100%;
+        padding: 10px;
+    }
+
+    /* Make table scrollable horizontally */
+    .materials-section {
+        overflow-x: auto;
+        padding: 10px;
+    }
+
+    table {
+        min-width: 600px; /* Forces horizontal scroll on small phones */
+    }
+
+    th, td {
+        padding: 8px;
+        font-size: 12px;
+    }
+
+    .action-buttons {
+        flex-direction: column;
+        gap: 3px;
+    }
+
+    .action-btn {
+        padding: 4px 8px;
+        font-size: 11px;
+    }
+
+    /* Modal */
+    .modal-content {
+        width: 95%;
+        padding: 20px;
+        margin: 10px;
+    }
+
+    .barcode-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .barcode-controls select,
+    .barcode-controls input,
+    .barcode-controls button {
+        width: 100%;
+    }
+
+    /* Camera scanner */
+    #reader {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    #reader video {
+        width: 100% !important;
+        height: auto !important;
+    }
+
+    #reader__scan_region {
+        min-height: 250px !important;
+    }
+
+    /* QR Scanner controls */
+    #reader__dashboard_section {
+        padding: 5px !important;
+    }
+
+    #reader__dashboard_section select,
+    #reader__dashboard_section button {
+        width: 100% !important;
+        margin: 5px 0 !important;
+        padding: 10px !important;
+        font-size: 14px !important;
+    }
+
+    /* Toast notifications */
+    .toast-message {
+        width: 90%;
+        left: 5%;
+        transform: none;
+        font-size: 14px;
+        padding: 10px 15px;
+        bottom: 10px;
+    }
+}
+
+/* Tablets (481px to 768px) */
+@media screen and (min-width: 481px) and (max-width: 768px) {
+    .material-details {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .material-actions {
+        flex-wrap: wrap;
+    }
+
+    .material-actions button {
+        min-width: calc(50% - 5px);
+    }
+
+    .table-controls {
+        flex-direction: row;
+        gap: 10px;
+    }
+
+    .btn-print {
+        width: auto;
+    }
+
+    /* Make table scrollable if needed */
+    .materials-section {
+        overflow-x: auto;
+    }
+
+    table {
+        min-width: 700px;
+    }
+}
+
+/* Landscape mode on phones */
+@media screen and (max-width: 900px) and (orientation: landscape) {
+    .material-details {
+        grid-template-columns: repeat(4, 1fr);
+    }
+
+    .material-actions {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .material-actions button {
+        min-width: auto;
+    }
+
+    #reader video {
+        max-height: 250px !important;
+    }
+
+    #reader__scan_region {
+        min-height: 200px !important;
+    }
+}
+
+/* Fix for very small devices */
+@media screen and (max-width: 360px) {
+    .stats span {
+        font-size: 11px;
+        padding: 4px 8px;
+    }
+
+    .detail-item {
+        padding: 8px;
+    }
+
+    .detail-value {
+        font-size: 14px;
+    }
+
+    .material-actions button {
+        font-size: 12px;
+        padding: 10px;
+    }
+
+    th, td {
+        padding: 6px;
+        font-size: 11px;
+    }
+
+    .action-btn {
+        padding: 3px 6px;
+        font-size: 10px;
+    }
+}
+
+/* High-resolution screens */
+@media screen and (min-width: 1400px) {
+    .container {
+        max-width: 1600px;
+        margin: 0 auto;
+    }
+
+    .material-details {
+        grid-template-columns: repeat(4, 1fr);
+    }
+
+    table {
+        font-size: 16px;
+    }
+
+    th, td {
+        padding: 15px;
+    }
+
+    .action-btn {
+        padding: 8px 12px;
+        font-size: 14px;
+    }
+}
+
+/* Print styles for barcode labels */
+@media print {
+    body * {
+        visibility: hidden;
+    }
+
+    #barcodeModal,
+    #barcodeModal * {
+        visibility: visible;
+    }
+
+    #barcodeModal {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: auto;
+        background: white;
+    }
+
+    .modal-content {
+        box-shadow: none;
+        border: none;
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .close,
+    .barcode-controls {
+        display: none;
+    }
+
+    .barcode-preview {
+        page-break-after: always;
+    }
+
+    .barcode-preview img {
+        max-width: 100%;
+        height: auto;
+    }
+}

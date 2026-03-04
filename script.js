@@ -622,26 +622,59 @@ function toggleCamera() {
         cameraBtn.classList.add('active');
         
         try {
+            // Force back camera only with specific constraints
+            const config = {
+                fps: 10,
+                qrbox: { width: 250, height: 250 },
+                rememberLastUsedCamera: true,
+                showTorchButtonIfSupported: true,
+                // THIS FORCES BACK CAMERA
+                videoConstraints: {
+                    facingMode: { exact: "environment" }  // "environment" = back camera
+                }
+            };
+            
             html5QrcodeScanner = new Html5QrcodeScanner(
                 "reader", 
-                { 
-                    fps: 10, 
-                    qrbox: { width: 250, height: 250 },
-                    rememberLastUsedCamera: true,
-                    showTorchButtonIfSupported: true
-                },
-                /* verbose= */ false
+                config,
+                false
             );
             
             html5QrcodeScanner.render(onScanSuccess, onScanError);
             isScanning = true;
-            console.log('Camera scanner started');
+            console.log('Camera scanner started (back camera only)');
         } catch (error) {
             console.error('Error starting camera:', error);
-            alert('Failed to start camera. Please check permissions.');
-            readerDiv.style.display = 'none';
-            cameraBtn.textContent = '📷 Scan with Camera';
-            cameraBtn.classList.remove('active');
+            
+            // Fallback if "exact" fails (some phones handle it differently)
+            try {
+                console.log('Trying fallback camera settings...');
+                const fallbackConfig = {
+                    fps: 10,
+                    qrbox: { width: 250, height: 250 },
+                    rememberLastUsedCamera: true,
+                    showTorchButtonIfSupported: true,
+                    videoConstraints: {
+                        facingMode: "environment"  // Without "exact" - more compatible
+                    }
+                };
+                
+                html5QrcodeScanner = new Html5QrcodeScanner(
+                    "reader", 
+                    fallbackConfig,
+                    false
+                );
+                
+                html5QrcodeScanner.render(onScanSuccess, onScanError);
+                isScanning = true;
+                console.log('Camera scanner started with fallback');
+            } catch (fallbackError) {
+                console.error('Fallback also failed:', fallbackError);
+                alert('Failed to start back camera. Please check permissions.');
+                readerDiv.style.display = 'none';
+                cameraBtn.textContent = '📷 Scan with Camera';
+                cameraBtn.classList.remove('active');
+            }
         }
     } else {
         if (html5QrcodeScanner) {
@@ -660,6 +693,12 @@ function toggleCamera() {
     }
 }
 
+function onScanError(errorMessage) {
+    // Ignore most errors - they're usually just "no barcode found"
+}
+
+// ==================== CAMERA SCAN HANDLER ====================
+
 function onScanSuccess(decodedText, decodedResult) {
     console.log('Scan success:', decodedText);
     
@@ -668,14 +707,51 @@ function onScanSuccess(decodedText, decodedResult) {
         toggleCamera();
     }
     
-    // Put in search box and search
+    // Put in search box
     document.getElementById('searchInput').value = decodedText;
-    searchMaterial(decodedText);
     
-    // Optional: beep or vibrate
-    try {
-        if (navigator.vibrate) navigator.vibrate(200);
-    } catch (e) {}
+    // Find the material
+    let material = materials.find(m => m.code.toUpperCase() === decodedText.toUpperCase());
+    
+    if (material) {
+        // Material found - automatically add 1 to stock
+        let oldStock = material.stock;
+        material.stock += 1;
+        
+        // Save to localStorage and Firebase
+        saveMaterials();
+        
+        // Add activity
+        activities.unshift({
+            id: Date.now(),
+            action: 'RECEIVE',
+            material_code: material.code,
+            material_name: material.name,
+            quantity: 1,
+            old_stock: oldStock,
+            new_stock: material.stock,
+            note: 'Scan receive',
+            timestamp: new Date().toLocaleString()
+        });
+        saveActivities();
+        
+        // Update UI
+        updateTable();
+        selectMaterial(material.code);
+        
+        // Show quick visual feedback
+        showScanFeedback(material.name, material.stock);
+        
+        // Vibrate on mobile
+        try {
+            if (navigator.vibrate) navigator.vibrate(50);
+        } catch (e) {}
+        
+    } else {
+        // Material not found
+        console.log('Material not found:', decodedText);
+        showScanFeedback('Unknown barcode', null, 'error');
+    }
 }
 
 function onScanError(errorMessage) {
@@ -683,14 +759,40 @@ function onScanError(errorMessage) {
     // console.log('Scan error:', errorMessage);
 }
 
-function onScanSuccess(decodedText, decodedResult) {
-    toggleCamera();
-    document.getElementById('searchInput').value = decodedText;
-    searchMaterial(decodedText);
-}
-
-function onScanError(errorMessage) {
-    // Ignore most errors
+// Quick visual feedback that disappears automatically
+function showScanFeedback(message, newStock, type = 'success') {
+    let toast = document.createElement('div');
+    
+    if (type === 'success') {
+        toast.textContent = `✅ ${message} +1 (${newStock})`;
+        toast.style.background = '#28a745';
+    } else {
+        toast.textContent = `❌ ${message}`;
+        toast.style.background = '#dc3545';
+    }
+    
+    toast.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: white;
+        padding: 12px 24px;
+        border-radius: 50px;
+        font-weight: bold;
+        z-index: 9999;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        animation: slideUp 0.3s, fadeOut 0.5s 1.5s forwards;
+    `;
+    
+    document.body.appendChild(toast);
+    
+    // Auto remove after 2 seconds
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.remove();
+        }
+    }, 2000);
 }
 
 // ==================== CLOSE SELECTED MATERIAL ====================
