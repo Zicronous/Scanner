@@ -1,0 +1,28 @@
+{
+  "materials": [
+    {
+      "id": 1,
+      "code": "ST-ANG-40",
+      "name": "40mm Angle",
+      "category": "Steel",
+      "stock": 45,
+      "unit": "pieces"
+    },
+    {
+      "id": 2,
+      "code": "ST-ANG-25",
+      "name": "25mm Angle",
+      "category": "Steel",
+      "stock": 150,
+      "unit": "pieces"
+    },
+    {
+      "id": 3,
+      "code": "ST-BAR-16",
+      "name": "16mm Round Bar",
+      "category": "Steel",
+      "stock": 2,
+      "unit": "pieces"
+    }
+  ]
+}
