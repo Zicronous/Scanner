@@ -1,126 +1,90 @@
-// ==================== SQLITE DATABASE SETUP ====================
-let db = null;
-let SQL = null;
+// ==================== DATABASE SETUP ====================
 let materials = [];
 let selectedMaterial = null;
 let scanBuffer = "";
 let lastKeyTime = 0;
 let html5QrcodeScanner = null;
 let isScanning = false;
+let activities = [];
 
 // Initialize database
-async function initDatabase() {
-    try {
-        // Load SQL.js
-        SQL = await initSqlJs({
-            locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
-        });
-        
-        // Try to load existing database from localStorage
-        let savedDb = localStorage.getItem('inventory_db');
-        if (savedDb) {
-            // Load existing database
-            let dataArray = new Uint8Array(JSON.parse(savedDb));
-            db = new SQL.Database(dataArray);
-            console.log('✅ Loaded existing database');
-        } else {
-            // Create new database
-            db = new SQL.Database();
-            createTables();
-            console.log('✅ Created new database');
-        }
-        
-        loadMaterials();
-        
-    } catch (error) {
-        console.error('Database init error:', error);
-    }
-}
-
-// Create tables
-function createTables() {
-    // Materials table
-    db.run(`
-        CREATE TABLE IF NOT EXISTS materials (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT UNIQUE NOT NULL,
-            name TEXT NOT NULL,
-            category TEXT,
-            stock INTEGER DEFAULT 0,
-            unit TEXT DEFAULT 'pieces',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
+function initDatabase() {
+    console.log('Initializing database...');
     
-    // Activities table (history)
-    db.run(`
-        CREATE TABLE IF NOT EXISTS activities (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            action TEXT NOT NULL,
-            material_code TEXT,
-            material_name TEXT,
-            quantity INTEGER,
-            old_stock INTEGER,
-            new_stock INTEGER,
-            note TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (material_code) REFERENCES materials(code)
-        )
-    `);
-    
-    // Create indexes for performance
-    db.run(`CREATE INDEX IF NOT EXISTS idx_materials_code ON materials(code)`);
-    db.run(`CREATE INDEX IF NOT EXISTS idx_materials_category ON materials(category)`);
-    
-    // Enable WAL mode for better concurrency
-    db.run(`PRAGMA journal_mode=WAL;`);
-    
-    saveDatabase();
-}
-
-// Save database to localStorage
-function saveDatabase() {
-    if (!db) return;
-    
-    // Export database as binary
-    let data = db.export();
-    let buffer = new Uint8Array(data);
-    let dataStr = JSON.stringify(Array.from(buffer));
-    localStorage.setItem('inventory_db', dataStr);
-}
-
-// Load all materials
-function loadMaterials() {
-    if (!db) return;
-    
-    try {
-        let results = db.exec(`
-            SELECT id, code, name, category, stock, unit 
-            FROM materials 
-            ORDER BY code
-        `);
-        
-        if (results.length > 0) {
-            materials = results[0].values.map(row => ({
-                id: row[0],
-                code: row[1],
-                name: row[2],
-                category: row[3],
-                stock: row[4],
-                unit: row[5]
-            }));
-        } else {
+    // Load materials from localStorage
+    let saved = localStorage.getItem('materials');
+    if (saved) {
+        try {
+            materials = JSON.parse(saved);
+            console.log('✅ Loaded', materials.length, 'materials from localStorage');
+        } catch (e) {
+            console.error('Error loading materials:', e);
             materials = [];
         }
-        
-        updateTable();
-        updateStats();
-        
-    } catch (error) {
-        console.error('Error loading materials:', error);
+    } else {
         materials = [];
+        console.log('✅ Created new materials list');
     }
+    
+    // Load activities
+    let savedActivities = localStorage.getItem('activities');
+    if (savedActivities) {
+        try {
+            activities = JSON.parse(savedActivities);
+        } catch (e) {
+            activities = [];
+        }
+    } else {
+        activities = [];
+    }
+    
+    updateTable();
+    updateStats();
+    
+    // Listen for changes from Firebase (other devices)
+    if (typeof dbRef !== 'undefined') {
+        dbRef.on('value', (snapshot) => {
+            let remoteData = snapshot.val();
+            if (remoteData && remoteData.length > 0) {
+                // Only update if different from current
+                if (JSON.stringify(remoteData) !== JSON.stringify(materials)) {
+                    console.log('📡 Received updates from another device');
+                    materials = remoteData;
+                    localStorage.setItem('materials', JSON.stringify(materials));
+                    updateTable();
+                    updateStats();
+                    
+                    // If selected material exists, update it
+                    if (selectedMaterial) {
+                        let updated = materials.find(m => m.code === selectedMaterial.code);
+                        if (updated) {
+                            selectedMaterial = updated;
+                            selectMaterial(updated.code);
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+// Save materials
+function saveMaterials() {
+    // Save to localStorage (for offline)
+    localStorage.setItem('materials', JSON.stringify(materials));
+    
+    // Save to Firebase (for multi-device sync)
+    if (typeof dbRef !== 'undefined') {
+        dbRef.set(materials);
+    }
+    
+    updateStats();
+    updateTable();
+}
+
+// Save activities
+function saveActivities() {
+    localStorage.setItem('activities', JSON.stringify(activities));
 }
 
 // ==================== CORE FUNCTIONS ====================
@@ -140,7 +104,17 @@ function generateCode(name, category) {
     let numbers = name.match(/\d+/g);
     let numPart = numbers ? numbers[0] : '';
     
-    return `${cat}-${codePart.toUpperCase()}${numPart}`;
+    let code = `${cat}-${codePart.toUpperCase()}${numPart}`;
+    
+    // Make sure code is unique
+    let counter = 1;
+    let originalCode = code;
+    while (materials.some(m => m.code === code)) {
+        code = `${originalCode}-${counter}`;
+        counter++;
+    }
+    
+    return code;
 }
 
 // Get stock status
@@ -233,7 +207,6 @@ function searchMaterial(barcode) {
 }
 
 // Select material
-// REPLACE your existing selectMaterial function with this:
 function selectMaterial(code) {
     let material = materials.find(m => m.code === code);
     if (!material) return;
@@ -342,55 +315,41 @@ function saveNewMaterial() {
         return;
     }
     
-    // Generate code
+    // Generate unique code
     let code = generateCode(name, category);
     
-    try {
-        // Check if code exists
-        let check = db.exec(`SELECT code FROM materials WHERE code = ?`, [code]);
-        if (check.length > 0 && check[0].values.length > 0) {
-            // Make code unique
-            let counter = 1;
-            while (true) {
-                let newCode = `${code}-${counter}`;
-                check = db.exec(`SELECT code FROM materials WHERE code = ?`, [newCode]);
-                if (check.length === 0 || check[0].values.length === 0) {
-                    code = newCode;
-                    break;
-                }
-                counter++;
-            }
-        }
-        
-        // Insert new material
-        db.run(`
-            INSERT INTO materials (code, name, category, stock, unit) 
-            VALUES (?, ?, ?, ?, ?)
-        `, [code, name, category, stock, unit]);
-        
-        // Log activity
-        db.run(`
-            INSERT INTO activities (action, material_code, material_name, quantity, new_stock) 
-            VALUES (?, ?, ?, ?, ?)
-        `, ['ADD', code, name, stock, stock]);
-        
-        saveDatabase();
-        loadMaterials();
-        hideAllForms();
-        
-        // Select the new material
-        selectMaterial(code);
-        
-        alert(`✅ Material added!\nCode: ${code}`);
-        
-        // Clear form
-        document.getElementById('newName').value = '';
-        document.getElementById('newStock').value = '0';
-        
-    } catch (error) {
-        console.error('Error adding material:', error);
-        alert('❌ Error adding material');
-    }
+    let newMaterial = {
+        id: Date.now(),
+        code: code,
+        name: name,
+        category: category,
+        stock: stock,
+        unit: unit
+    };
+    
+    materials.push(newMaterial);
+    saveMaterials();
+    
+    // Add activity
+    activities.unshift({
+        id: Date.now(),
+        action: 'ADD',
+        material_code: code,
+        material_name: name,
+        quantity: stock,
+        timestamp: new Date().toLocaleString()
+    });
+    saveActivities();
+    
+    updateTable();
+    hideAllForms();
+    selectMaterial(code);
+    
+    alert(`✅ Material added!\nCode: ${code}`);
+    
+    // Clear form
+    document.getElementById('newName').value = '';
+    document.getElementById('newStock').value = '0';
 }
 
 // Receive stock
@@ -404,50 +363,39 @@ function saveReceive() {
         return;
     }
     
-    try {
-        db.run(`BEGIN TRANSACTION;`);
-        
-        // Get current stock
-        let result = db.exec(`SELECT stock, name FROM materials WHERE code = ?`, [code]);
-        if (result.length === 0 || result[0].values.length === 0) {
-            throw new Error('Material not found');
-        }
-        
-        let currentStock = result[0].values[0][0];
-        let name = result[0].values[0][1];
-        let newStock = currentStock + qty;
-        
-        // Update stock
-        db.run(`
-            UPDATE materials 
-            SET stock = ?, updated_at = CURRENT_TIMESTAMP 
-            WHERE code = ?
-        `, [newStock, code]);
-        
-        // Log activity
-        db.run(`
-            INSERT INTO activities 
-            (action, material_code, material_name, quantity, old_stock, new_stock, note) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, ['RECEIVE', code, name, qty, currentStock, newStock, note]);
-        
-        db.run(`COMMIT;`);
-        
-        saveDatabase();
-        loadMaterials();
-        selectMaterial(code);
-        hideAllForms();
-        
-        document.getElementById('receiveQty').value = '';
-        document.getElementById('receiveNote').value = '';
-        
-        alert(`✅ Received ${qty} ${name}\nNew stock: ${newStock}`);
-        
-    } catch (error) {
-        db.run(`ROLLBACK;`);
-        console.error('Error receiving stock:', error);
-        alert('❌ Error receiving stock');
+    let material = materials.find(m => m.code === code);
+    if (!material) {
+        alert('Material not found');
+        return;
     }
+    
+    let oldStock = material.stock;
+    material.stock += qty;
+    
+    saveMaterials();
+    
+    // Add activity
+    activities.unshift({
+        id: Date.now(),
+        action: 'RECEIVE',
+        material_code: code,
+        material_name: material.name,
+        quantity: qty,
+        old_stock: oldStock,
+        new_stock: material.stock,
+        note: note,
+        timestamp: new Date().toLocaleString()
+    });
+    saveActivities();
+    
+    updateTable();
+    selectMaterial(code);
+    hideAllForms();
+    
+    document.getElementById('receiveQty').value = '';
+    document.getElementById('receiveNote').value = '';
+    
+    alert(`✅ Received ${qty} ${material.unit}\nNew stock: ${material.stock}`);
 }
 
 // Issue stock
@@ -461,57 +409,44 @@ function saveIssue() {
         return;
     }
     
-    try {
-        db.run(`BEGIN TRANSACTION;`);
-        
-        // Get current stock
-        let result = db.exec(`SELECT stock, name FROM materials WHERE code = ?`, [code]);
-        if (result.length === 0 || result[0].values.length === 0) {
-            throw new Error('Material not found');
-        }
-        
-        let currentStock = result[0].values[0][0];
-        let name = result[0].values[0][1];
-        
-        if (currentStock < qty) {
-            db.run(`ROLLBACK;`);
-            alert(`❌ Only ${currentStock} available!`);
-            return;
-        }
-        
-        let newStock = currentStock - qty;
-        
-        // Update stock
-        db.run(`
-            UPDATE materials 
-            SET stock = ?, updated_at = CURRENT_TIMESTAMP 
-            WHERE code = ?
-        `, [newStock, code]);
-        
-        // Log activity
-        db.run(`
-            INSERT INTO activities 
-            (action, material_code, material_name, quantity, old_stock, new_stock, note) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, ['ISSUE', code, name, qty, currentStock, newStock, note]);
-        
-        db.run(`COMMIT;`);
-        
-        saveDatabase();
-        loadMaterials();
-        selectMaterial(code);
-        hideAllForms();
-        
-        document.getElementById('issueQty').value = '';
-        document.getElementById('issueNote').value = '';
-        
-        alert(`✅ Issued ${qty} ${name}\nNew stock: ${newStock}`);
-        
-    } catch (error) {
-        db.run(`ROLLBACK;`);
-        console.error('Error issuing stock:', error);
-        alert('❌ Error issuing stock');
+    let material = materials.find(m => m.code === code);
+    if (!material) {
+        alert('Material not found');
+        return;
     }
+    
+    if (material.stock < qty) {
+        alert(`❌ Only ${material.stock} available!`);
+        return;
+    }
+    
+    let oldStock = material.stock;
+    material.stock -= qty;
+    
+    saveMaterials();
+    
+    // Add activity
+    activities.unshift({
+        id: Date.now(),
+        action: 'ISSUE',
+        material_code: code,
+        material_name: material.name,
+        quantity: qty,
+        old_stock: oldStock,
+        new_stock: material.stock,
+        note: note,
+        timestamp: new Date().toLocaleString()
+    });
+    saveActivities();
+    
+    updateTable();
+    selectMaterial(code);
+    hideAllForms();
+    
+    document.getElementById('issueQty').value = '';
+    document.getElementById('issueNote').value = '';
+    
+    alert(`✅ Issued ${qty} ${material.unit}\nNew stock: ${material.stock}`);
 }
 
 // Stock count adjustment
@@ -525,85 +460,67 @@ function saveCount() {
         return;
     }
     
-    try {
-        db.run(`BEGIN TRANSACTION;`);
-        
-        // Get current stock
-        let result = db.exec(`SELECT stock, name FROM materials WHERE code = ?`, [code]);
-        if (result.length === 0 || result[0].values.length === 0) {
-            throw new Error('Material not found');
-        }
-        
-        let currentStock = result[0].values[0][0];
-        let name = result[0].values[0][1];
-        let difference = actual - currentStock;
-        
-        // Update stock
-        db.run(`
-            UPDATE materials 
-            SET stock = ?, updated_at = CURRENT_TIMESTAMP 
-            WHERE code = ?
-        `, [actual, code]);
-        
-        // Log activity
-        db.run(`
-            INSERT INTO activities 
-            (action, material_code, material_name, quantity, old_stock, new_stock, note) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, ['COUNT', code, name, difference, currentStock, actual, reason]);
-        
-        db.run(`COMMIT;`);
-        
-        saveDatabase();
-        loadMaterials();
-        selectMaterial(code);
-        hideAllForms();
-        
-        document.getElementById('countQty').value = '';
-        
-        alert(`✅ Stock updated\nOld: ${currentStock} → New: ${actual}`);
-        
-    } catch (error) {
-        db.run(`ROLLBACK;`);
-        console.error('Error counting stock:', error);
-        alert('❌ Error updating count');
+    let material = materials.find(m => m.code === code);
+    if (!material) {
+        alert('Material not found');
+        return;
     }
+    
+    let oldStock = material.stock;
+    let difference = actual - oldStock;
+    material.stock = actual;
+    
+    saveMaterials();
+    
+    // Add activity
+    activities.unshift({
+        id: Date.now(),
+        action: 'COUNT',
+        material_code: code,
+        material_name: material.name,
+        quantity: difference,
+        old_stock: oldStock,
+        new_stock: actual,
+        note: reason,
+        timestamp: new Date().toLocaleString()
+    });
+    saveActivities();
+    
+    updateTable();
+    selectMaterial(code);
+    hideAllForms();
+    
+    document.getElementById('countQty').value = '';
+    
+    alert(`✅ Stock updated\nOld: ${oldStock} → New: ${actual}`);
 }
 
 // Delete material
 function deleteMaterial(code) {
     if (!confirm('⚠️ Delete this material? This cannot be undone.')) return;
     
-    try {
-        db.run(`BEGIN TRANSACTION;`);
-        
-        // Get material info for logging
-        let result = db.exec(`SELECT name FROM materials WHERE code = ?`, [code]);
-        let name = result.length > 0 ? result[0].values[0][0] : code;
-        
-        // Delete activities first
-        db.run(`DELETE FROM activities WHERE material_code = ?`, [code]);
-        
-        // Delete material
-        db.run(`DELETE FROM materials WHERE code = ?`, [code]);
-        
-        db.run(`COMMIT;`);
-        
-        saveDatabase();
-        loadMaterials();
-        
-        if (selectedMaterial && selectedMaterial.code === code) {
-            document.getElementById('selectedMaterial').classList.add('hidden');
-            selectedMaterial = null;
-        }
-        
-        alert(`✅ Deleted: ${name}`);
-        
-    } catch (error) {
-        db.run(`ROLLBACK;`);
-        console.error('Error deleting material:', error);
-        alert('❌ Error deleting material');
+    let material = materials.find(m => m.code === code);
+    materials = materials.filter(m => m.code !== code);
+    saveMaterials();
+    
+    // Add activity
+    activities.unshift({
+        id: Date.now(),
+        action: 'DELETE',
+        material_code: code,
+        material_name: material ? material.name : code,
+        timestamp: new Date().toLocaleString()
+    });
+    saveActivities();
+    
+    updateTable();
+    
+    if (selectedMaterial && selectedMaterial.code === code) {
+        document.getElementById('selectedMaterial').classList.add('hidden');
+        selectedMaterial = null;
     }
+    
+    alert(`✅ Deleted: ${material ? material.name : code}`);
 }
 
 // ==================== BARCODE FUNCTIONS ====================
@@ -684,11 +601,55 @@ function setupButtonHandlers() {
     document.getElementById('categoryFilter').onchange = function() {
         filterMaterials();
     };
+}
+
+// ==================== MOBILE CAMERA SCAN ====================
+
+function toggleCamera() {
+    let cameraBtn = document.getElementById('cameraBtn');
+    let readerDiv = document.getElementById('reader');
     
-    document.querySelector('.btn-print').onclick = function(e) {
-        e.preventDefault();
-        printBarcode();
-    };
+    if (!isScanning) {
+        readerDiv.style.display = 'block';
+        cameraBtn.textContent = '⏹️ Stop Camera';
+        cameraBtn.classList.add('active');
+        
+        html5QrcodeScanner = new Html5QrcodeScanner(
+            "reader", 
+            { fps: 10, qrbox: { width: 250, height: 250 } },
+            false
+        );
+        
+        html5QrcodeScanner.render(onScanSuccess, onScanError);
+        isScanning = true;
+    } else {
+        if (html5QrcodeScanner) {
+            html5QrcodeScanner.clear();
+            html5QrcodeScanner = null;
+        }
+        readerDiv.style.display = 'none';
+        cameraBtn.textContent = '📷 Scan with Camera';
+        cameraBtn.classList.remove('active');
+        isScanning = false;
+    }
+}
+
+function onScanSuccess(decodedText, decodedResult) {
+    toggleCamera();
+    document.getElementById('searchInput').value = decodedText;
+    searchMaterial(decodedText);
+}
+
+function onScanError(errorMessage) {
+    // Ignore most errors
+}
+
+// ==================== CLOSE SELECTED MATERIAL ====================
+
+function closeSelectedMaterial() {
+    document.getElementById('selectedMaterial').classList.add('hidden');
+    selectedMaterial = null;
+    document.getElementById('searchInput').focus();
 }
 
 // ==================== KEYBOARD SHORTCUTS ====================
@@ -744,49 +705,5 @@ window.printSingleBarcode = printSingleBarcode;
 window.closeBarcodeModal = closeBarcodeModal;
 window.printBarcodeLabel = printBarcodeLabel;
 window.hideAllForms = hideAllForms;
-
-function toggleCamera() {
-    let cameraBtn = document.getElementById('cameraBtn');
-    let readerDiv = document.getElementById('reader');
-    
-    if (!isScanning) {
-        readerDiv.style.display = 'block';
-        cameraBtn.textContent = '⏹️ Stop Camera';
-        cameraBtn.classList.add('active');
-        
-        html5QrcodeScanner = new Html5QrcodeScanner(
-            "reader", 
-            { fps: 10, qrbox: { width: 250, height: 250 } },
-            false
-        );
-        
-        html5QrcodeScanner.render(onScanSuccess, onScanError);
-        isScanning = true;
-    } else {
-        if (html5QrcodeScanner) {
-            html5QrcodeScanner.clear();
-            html5QrcodeScanner = null;
-        }
-        readerDiv.style.display = 'none';
-        cameraBtn.textContent = '📷 Scan with Camera';
-        cameraBtn.classList.remove('active');
-        isScanning = false;
-    }
-}
-
-function onScanSuccess(decodedText, decodedResult) {
-    toggleCamera();
-    document.getElementById('searchInput').value = decodedText;
-    searchMaterial(decodedText);
-}
-
-function onScanError(errorMessage) {
-    // Ignore most errors
-}
-
-// ==================== CLOSE SELECTED MATERIAL ====================
-function closeSelectedMaterial() {
-    document.getElementById('selectedMaterial').classList.add('hidden');
-    selectedMaterial = null;
-    document.getElementById('searchInput').focus();
-}
+window.toggleCamera = toggleCamera;
+window.closeSelectedMaterial = closeSelectedMaterial;

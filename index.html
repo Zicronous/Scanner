@@ -6,27 +6,6 @@
     <title>Stock Scanner - Raw Materials</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/html5-qrcode/minified/html5-qrcode.min.js"></script>
-    <!-- SQL.js for database - CORRECT VERSION -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.wasm"></script>
-<script>
-    // Make sure initSqlJs is available globally
-    window.initSqlJs = window.initSqlJs || function(config) {
-        return new Promise(function(resolve, reject) {
-            if (window.SQL) {
-                resolve(window.SQL);
-            } else {
-                // Fallback - load from CDN
-                const script = document.createElement('script');
-                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js';
-                script.onload = () => resolve(window.SQL);
-                script.onerror = reject;
-                document.head.appendChild(script);
-            }
-        });
-    };
-</script>
-
 </head>
 <body>
     <div class="container">
@@ -51,7 +30,6 @@
                 <span class="scan-hint">USB scanner: Just click box and scan</span>
             </div>
             <div id="reader"></div>
-
         </div>
 
         <!-- Quick Actions -->
@@ -61,11 +39,11 @@
 
         <!-- Material Found / Selected Section -->
         <div id="selectedMaterial" class="selected-material hidden">
-    <button class="close-button" onclick="closeSelectedMaterial()">✕</button>
-    <div id="selectedMaterialContent"></div>
-</div>
+            <button class="close-button" onclick="closeSelectedMaterial()">✕</button>
+            <div id="selectedMaterialContent"></div>
+        </div>
 
-        <!-- Action Forms (hidden by default) -->
+        <!-- Action Forms -->
         <div id="actionForms" class="action-forms">
             <!-- Add Form -->
             <div id="addForm" class="form-card hidden">
@@ -167,16 +145,8 @@
         <div class="modal-content">
             <span class="close" onclick="closeBarcodeModal()">&times;</span>
             <h3>Print Barcode Label</h3>
-            <div id="barcodePreview" class="barcode-preview">
-                <!-- Barcode image will appear here -->
-            </div>
+            <div id="barcodePreview" class="barcode-preview"></div>
             <div class="barcode-controls">
-                <label>Label Size:</label>
-                <select id="labelSize">
-                    <option value="2x1">2" x 1"</option>
-                    <option value="3x1">3" x 1"</option>
-                    <option value="4x2">4" x 2"</option>
-                </select>
                 <label>Copies:</label>
                 <input type="number" id="labelCopies" value="2" min="1" max="10">
                 <button onclick="printBarcodeLabel()" class="btn-print">Print</button>
@@ -185,5 +155,28 @@
     </div>
 
     <script src="script.js"></script>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+    <script>
+        // 🔥 PASTE YOUR FIREBASE CONFIG HERE 🔥
+        const firebaseConfig = {
+            apiKey: "AIzaSyDX6GKKqJMTH_82f2ePXDfX6iAFp9ZcWuQ",
+            authDomain: "zcanner-20ea5.firebaseapp.com",
+            databaseURL: "https://zcanner-20ea5-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "zcanner-20ea5",
+            storageBucket: "zcanner-20ea5.firebasestorage.app",
+            messagingSenderId: "50497533427",
+            appId: "1:50497533427:web:15781de611154eaf9f8e86",
+            measurementId: "G-7RBWL10Y8G"
+};
+        
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        window.dbRef = firebase.database().ref('inventory');
+        console.log('🔥 Firebase ready (compat mode)');
+    </script>
 </body>
 </html>
