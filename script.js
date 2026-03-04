@@ -16,21 +16,57 @@ function initDatabase() {
     if (saved) {
         try {
             materials = JSON.parse(saved);
-            console.log('✅ Loaded', materials.length, 'materials from localStorage');
+            
+            // 🧹 AUTO-CLEAN: Remove any null entries and fix missing fields
+            let originalCount = materials.length;
+            
+            // Filter out nulls and non-objects
+            materials = materials.filter(m => m !== null && typeof m === 'object');
+            
+            // Fix each material to ensure all fields exist
+            materials = materials.map(m => {
+                // Skip if material is invalid
+                if (!m) return null;
+                
+                // Ensure all fields exist with defaults
+                return {
+                    id: m.id || Date.now() + Math.floor(Math.random() * 1000),
+                    code: m.code || 'FIX-' + Math.floor(Math.random() * 10000),
+                    name: m.name || 'Unknown Material',
+                    category: m.category || 'Steel',
+                    stock: typeof m.stock === 'number' ? m.stock : 0,
+                    unit: m.unit || 'pieces'
+                };
+            }).filter(m => m !== null); // Remove any nulls from mapping
+            
+            if (originalCount !== materials.length) {
+                console.log(`🧹 Auto-cleaned: removed ${originalCount - materials.length} invalid entries`);
+                saveMaterials(); // Save cleaned data back
+            } else {
+                console.log('✅ Loaded', materials.length, 'materials from localStorage');
+            }
+            
         } catch (e) {
-            console.error('Error loading materials:', e);
+            console.error('Error loading materials, resetting data:', e);
             materials = [];
+            localStorage.setItem('materials', JSON.stringify([])); // Reset corrupted data
         }
     } else {
         materials = [];
         console.log('✅ Created new materials list');
     }
     
-    // Load activities
+    // Load activities (clean them too)
     let savedActivities = localStorage.getItem('activities');
     if (savedActivities) {
         try {
             activities = JSON.parse(savedActivities);
+            // Remove null activities
+            let actCount = activities.length;
+            activities = activities.filter(a => a !== null);
+            if (actCount !== activities.length) {
+                localStorage.setItem('activities', JSON.stringify(activities));
+            }
         } catch (e) {
             activities = [];
         }
@@ -46,17 +82,30 @@ function initDatabase() {
         dbRef.on('value', (snapshot) => {
             let remoteData = snapshot.val();
             if (remoteData && remoteData.length > 0) {
+                // Clean remote data too
+                let cleanData = remoteData
+                    .filter(m => m !== null && typeof m === 'object')
+                    .map(m => ({
+                        id: m.id || Date.now() + Math.floor(Math.random() * 1000),
+                        code: m.code || 'FIX-' + Math.floor(Math.random() * 10000),
+                        name: m.name || 'Unknown Material',
+                        category: m.category || 'Steel',
+                        stock: typeof m.stock === 'number' ? m.stock : 0,
+                        unit: m.unit || 'pieces'
+                    }));
+                
                 // Only update if different from current
-                if (JSON.stringify(remoteData) !== JSON.stringify(materials)) {
+                if (JSON.stringify(cleanData) !== JSON.stringify(materials)) {
                     console.log('📡 Received updates from another device');
-                    materials = remoteData;
+                    materials = cleanData;
                     localStorage.setItem('materials', JSON.stringify(materials));
                     updateTable();
                     updateStats();
+                    updateCategoryFilter();
                     
                     // If selected material exists, update it
                     if (selectedMaterial) {
-                        let updated = materials.find(m => m.code === selectedMaterial.code);
+                        let updated = materials.find(m => m && m.code === selectedMaterial.code);
                         if (updated) {
                             selectedMaterial = updated;
                             selectMaterial(updated.code);
@@ -81,6 +130,7 @@ function saveMaterials() {
     
     updateStats();
     updateTable();
+    updateCategoryFilter();
 }
 
 // Save activities
@@ -89,9 +139,21 @@ function saveActivities() {
 }
 
 // ==================== CORE FUNCTIONS ====================
-
 // Generate code from name
 function generateCode(name, category) {
+    // Safety checks
+    if (!name || name.trim() === '') {
+        console.warn('Empty name provided, using default');
+        name = 'Material-' + Date.now();
+    }
+    
+    if (!category || category.trim() === '') {
+        category = 'Steel';
+    }
+    
+    name = name.trim();
+    category = category.trim();
+    
     let cat = category.substring(0, 2).toUpperCase();
     let words = name.split(' ');
     let codePart = '';
@@ -107,10 +169,15 @@ function generateCode(name, category) {
     
     let code = `${cat}-${codePart.toUpperCase()}${numPart}`;
     
+    // Make sure materials exists
+    if (!Array.isArray(materials)) {
+        materials = [];
+    }
+    
     // Make sure code is unique
     let counter = 1;
     let originalCode = code;
-    while (materials.some(m => m.code === code)) {
+    while (materials.some(m => m && m.code === code)) {
         code = `${originalCode}-${counter}`;
         counter++;
     }
@@ -137,9 +204,9 @@ function updateStats() {
 // Update table
 function updateTable() {
     let filter = document.getElementById('categoryFilter').value;
-    let filtered = filter === 'ALL' ? materials : materials.filter(m => m.category === filter);
+    let filtered = filter === 'ALL' ? materials : materials.filter(m => m && m.category === filter);
     
-    if (filtered.length === 0) {
+    if (!filtered || filtered.length === 0) {
         document.getElementById('tableBody').innerHTML = `
             <tr>
                 <td colspan="7" style="text-align: center; padding: 40px; color: #666;">
@@ -153,23 +220,33 @@ function updateTable() {
     
     let html = '';
     filtered.forEach(m => {
-        let status = getStockStatus(m.stock);
+        // Skip if material is null
+        if (!m) return;
+        
+        // Ensure all fields exist
+        let code = m.code || 'NO-CODE';
+        let name = m.name || 'Unknown';
+        let category = m.category || 'Steel';
+        let stock = typeof m.stock === 'number' ? m.stock : 0;
+        let unit = m.unit || 'pieces';
+        
+        let status = getStockStatus(stock);
         let statusClass = status === 'Critical' ? 'status-critical' : 
                          status === 'Low' ? 'status-low' : 'status-ok';
         
         html += `
             <tr>
-                <td><strong>${m.code}</strong></td>
-                <td>${m.name}</td>
-                <td>${m.category}</td>
-                <td>${m.stock}</td>
-                <td>${m.unit}</td>
+                <td><strong>${code}</strong></td>
+                <td>${name}</td>
+                <td>${category}</td>
+                <td>${stock}</td>
+                <td>${unit}</td>
                 <td><span class="status-badge ${statusClass}">${status}</span></td>
                 <td>
                     <div class="action-buttons">
-                        <button onclick="selectMaterial('${m.code}')" class="action-btn edit-btn">View</button>
-                        <button onclick="printSingleBarcode('${m.code}', '${m.name}')" class="action-btn print-btn">🖨️</button>
-                        <button onclick="deleteMaterial('${m.code}')" class="action-btn delete-btn">✗</button>
+                        <button onclick="selectMaterial('${code}')" class="action-btn edit-btn">View</button>
+                        <button onclick="printSingleBarcode('${code}', '${name}')" class="action-btn print-btn">🖨️</button>
+                        <button onclick="deleteMaterial('${code}')" class="action-btn delete-btn">✗</button>
                     </div>
                 </td>
             </tr>
@@ -177,6 +254,34 @@ function updateTable() {
     });
     
     document.getElementById('tableBody').innerHTML = html;
+}
+
+// Update category filter dropdown with all categories
+function updateCategoryFilter() {
+    let filterSelect = document.getElementById('categoryFilter');
+    
+    // Get unique categories
+    let allCategories = ['ALL'];
+    materials.forEach(m => {
+        if (m && m.category && !allCategories.includes(m.category)) {
+            allCategories.push(m.category);
+        }
+    });
+    
+    // Save current selection
+    let currentValue = filterSelect.value;
+    
+    // Clear and rebuild options
+    filterSelect.innerHTML = '';
+    allCategories.forEach(cat => {
+        let option = document.createElement('option');
+        option.value = cat === 'ALL' ? 'ALL' : cat;
+        option.textContent = cat === 'ALL' ? 'All Categories' : cat;
+        if (currentValue === cat || (cat === 'ALL' && currentValue === 'ALL')) {
+            option.selected = true;
+        }
+        filterSelect.appendChild(option);
+    });
 }
 
 // Filter materials
@@ -230,20 +335,34 @@ function selectMaterial(code) {
                 <div class="detail-value">${material.category}</div>
             </div>
             <div class="detail-item">
-                <div class="detail-label">Status</div>
-                <div class="detail-value ${statusClass}">${status}</div>
+                <div class="detail-label">Unit</div>
+                <div class="detail-value">${material.unit}</div>
             </div>
             <div class="detail-item">
                 <div class="detail-label">Last Updated</div>
                 <div class="detail-value">${new Date().toLocaleDateString()}</div>
             </div>
         </div>
-        <div class="material-actions">
-            <button onclick="showReceiveForm('${material.code}')" class="btn-receive">📦 Expand</button>
-            <button onclick="showIssueForm('${material.code}')" class="btn-issue">✏️ Modify</button>
-            <button onclick="showCountForm('${material.code}')" class="btn-count">📊 Count</button>
-            <button onclick="printSingleBarcode('${material.code}', '${material.name}')" class="btn-print">🖨️ Print Label</button>
-            <button onclick="deleteMaterial('${material.code}')" class="btn-delete">🗑️ Delete</button>
+        
+        <!-- Stock Actions -->
+        <div style="margin: 15px 0; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+            <h3 style="margin-bottom: 10px; color: #495057;">📦 Stock Actions</h3>
+            <div class="material-actions">
+                <button onclick="showReceiveForm('${material.code}')" class="btn-receive">📦 Expand</button>
+                <button onclick="showIssueForm('${material.code}')" class="btn-issue">✏️ Modify Stock</button>
+                <button onclick="showCountForm('${material.code}')" class="btn-count">📊 Count</button>
+            </div>
+        </div>
+        
+        <!-- Edit Details -->
+        <div style="margin: 15px 0; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+            <h3 style="margin-bottom: 10px; color: #495057;">✏️ Edit Details</h3>
+            <div class="material-actions">
+                <button onclick="showEditCategoryForm('${material.code}')" class="btn-edit" style="background: #fd7e14; color: white;">📁 Change Category</button>
+                <button onclick="showEditUnitForm('${material.code}')" class="btn-edit" style="background: #20c997; color: white;">📏 Change Unit</button>
+                <button onclick="printSingleBarcode('${material.code}', '${material.name}')" class="btn-print">🖨️ Print Label</button>
+                <button onclick="deleteMaterial('${material.code}')" class="btn-delete">🗑️ Delete</button>
+            </div>
         </div>
     `;
     
@@ -258,6 +377,11 @@ function hideAllForms() {
     document.getElementById('receiveForm').classList.add('hidden');
     document.getElementById('issueForm').classList.add('hidden');
     document.getElementById('countForm').classList.add('hidden');
+    let editCategoryForm = document.getElementById('editCategoryForm');
+    if (editCategoryForm) editCategoryForm.remove();
+    
+    let editUnitForm = document.getElementById('editUnitForm');
+    if (editUnitForm) editUnitForm.remove();
 }
 
 function showAddForm() {
@@ -302,12 +426,275 @@ function showCountForm(materialCode) {
     document.getElementById('countQty').focus();
 }
 
+// ==================== EDIT CATEGORY & UNIT FUNCTIONS ====================
+
+function showEditCategoryForm(materialCode) {
+    hideAllForms();
+    let material = materials.find(m => m.code === materialCode);
+    if (!material) {
+        alert('Material not found');
+        return;
+    }
+    
+    console.log('Editing category for:', material);
+    console.log('All materials:', materials);
+    
+    // Get ALL unique categories from ALL materials
+    let allCategories = [];
+    
+    // Add default categories first
+    let defaultCategories = ['Steel', 'Hardware', 'Consumables', 'Paint'];
+    defaultCategories.forEach(cat => {
+        if (!allCategories.includes(cat)) {
+            allCategories.push(cat);
+        }
+    });
+    
+    // Then add categories from materials
+    materials.forEach(m => {
+        if (m && m.category && !allCategories.includes(m.category)) {
+            allCategories.push(m.category);
+        }
+    });
+    
+    allCategories.sort(); // Sort alphabetically
+    console.log('All categories found:', allCategories);
+    
+    // Build dropdown options
+    let options = '';
+    allCategories.forEach(cat => {
+        let selected = (cat === material.category) ? 'selected' : '';
+        options += `<option value="${cat}" ${selected}>${cat}</option>`;
+    });
+    
+    // Add option for new category
+    options += `<option value="__new__">➕ Add New Category...</option>`;
+    
+    let formHtml = `
+        <div id="editCategoryForm" class="form-card">
+            <h3>📁 Change Category</h3>
+            <p><strong>${material.name}</strong> (${material.code})</p>
+            <p>Current Category: <strong>${material.category}</strong></p>
+            
+            <select id="editCategorySelect" onchange="toggleEditCustomCategory()">
+                ${options}
+            </select>
+            
+            <input type="text" id="editCustomCategory" placeholder="Enter new category name" style="display: none; margin-top: 10px;">
+            
+            <div class="form-actions" style="margin-top: 20px;">
+                <button onclick="saveCategoryUpdate('${material.code}')" class="btn-save">Update Category</button>
+                <button onclick="hideAllForms()" class="btn-cancel">Cancel</button>
+            </div>
+        </div>
+    `;
+    
+    // Remove any existing edit form first
+    let existingForm = document.getElementById('editCategoryForm');
+    if (existingForm) existingForm.remove();
+    
+    // Insert new form
+    let tempDiv = document.createElement('div');
+    tempDiv.innerHTML = formHtml;
+    document.getElementById('actionForms').appendChild(tempDiv);
+}
+
+function toggleEditCustomCategory() {
+    let select = document.getElementById('editCategorySelect');
+    let customInput = document.getElementById('editCustomCategory');
+    
+    if (select.value === '__new__') {
+        customInput.style.display = 'block';
+        customInput.focus();
+    } else {
+        customInput.style.display = 'none';
+        customInput.value = '';
+    }
+}
+
+function saveCategoryUpdate(code) {
+    let material = materials.find(m => m.code === code);
+    if (!material) return;
+    
+    let select = document.getElementById('editCategorySelect');
+    let customInput = document.getElementById('editCustomCategory');
+    let newCategory;
+    
+    if (select.value === '__new__') {
+        newCategory = customInput.value.trim();
+        if (!newCategory) {
+            alert('Please enter a category name');
+            return;
+        }
+    } else {
+        newCategory = select.value;
+    }
+    
+    if (newCategory === material.category) {
+        alert('Category unchanged');
+        hideAllForms();
+        selectMaterial(code);
+        return;
+    }
+    
+    let oldCategory = material.category;
+    material.category = newCategory;
+    
+    saveMaterials();
+    
+    // Add activity
+    activities.unshift({
+        id: Date.now(),
+        action: 'EDIT_CATEGORY',
+        material_code: code,
+        material_name: material.name,
+        old_value: oldCategory,
+        new_value: newCategory,
+        timestamp: new Date().toLocaleString()
+    });
+    saveActivities();
+    
+    updateTable();
+    hideAllForms();
+    selectMaterial(code);
+    
+    alert(`✅ Category updated: ${oldCategory} → ${newCategory}`);
+}
+
+// ==================== EDIT UNIT FUNCTIONS ====================
+
+function showEditUnitForm(materialCode) {
+    hideAllForms();
+    let material = materials.find(m => m.code === materialCode);
+    if (!material) return;
+    
+    // Common units for suggestions
+    let commonUnits = ['pieces', 'pairs', 'kg', 'meters', 'boxes', 'cans', 'liters', 'sheets'];
+    
+    let formHtml = `
+        <div id="editUnitForm" class="form-card">
+            <h3>📏 Change Unit</h3>
+            <p><strong>${material.name}</strong> (${material.code})</p>
+            <p>Current Unit: <strong>${material.unit}</strong></p>
+            
+            <select id="editUnitSelect" onchange="toggleEditCustomUnit()">
+                <option value="">-- Select Unit --</option>
+                ${commonUnits.map(unit => 
+                    `<option value="${unit}" ${material.unit === unit ? 'selected' : ''}>${unit}</option>`
+                ).join('')}
+                <option value="__custom__">➕ Add Custom Unit...</option>
+            </select>
+            
+            <input type="text" id="editCustomUnit" placeholder="Enter custom unit" style="display: none; margin-top: 10px;">
+            
+            <div class="form-actions" style="margin-top: 20px;">
+                <button onclick="saveUnitUpdate('${material.code}')" class="btn-save">Update Unit</button>
+                <button onclick="hideAllForms()" class="btn-cancel">Cancel</button>
+            </div>
+        </div>
+    `;
+    
+    let tempDiv = document.createElement('div');
+    tempDiv.innerHTML = formHtml;
+    document.getElementById('actionForms').appendChild(tempDiv);
+}
+
+function toggleEditCustomUnit() {
+    let select = document.getElementById('editUnitSelect');
+    let customInput = document.getElementById('editCustomUnit');
+    
+    if (select.value === '__custom__') {
+        customInput.style.display = 'block';
+        customInput.focus();
+    } else {
+        customInput.style.display = 'none';
+        customInput.value = '';
+    }
+}
+
+function saveUnitUpdate(code) {
+    let material = materials.find(m => m.code === code);
+    if (!material) return;
+    
+    let select = document.getElementById('editUnitSelect');
+    let customInput = document.getElementById('editCustomUnit');
+    let newUnit;
+    
+    if (select.value === '__custom__') {
+        newUnit = customInput.value.trim();
+        if (!newUnit) {
+            alert('Please enter a unit');
+            return;
+        }
+    } else if (select.value) {
+        newUnit = select.value;
+    } else {
+        alert('Please select or enter a unit');
+        return;
+    }
+    
+    if (newUnit === material.unit) {
+        alert('Unit unchanged');
+        hideAllForms();
+        selectMaterial(code);
+        return;
+    }
+    
+    let oldUnit = material.unit;
+    material.unit = newUnit;
+    
+    saveMaterials();
+    
+    // Add activity
+    activities.unshift({
+        id: Date.now(),
+        action: 'EDIT_UNIT',
+        material_code: code,
+        material_name: material.name,
+        old_value: oldUnit,
+        new_value: newUnit,
+        timestamp: new Date().toLocaleString()
+    });
+    saveActivities();
+    
+    updateTable();
+    hideAllForms();
+    selectMaterial(code);
+    
+    alert(`✅ Unit updated: ${oldUnit} → ${newUnit}`);
+}
+
+// ==================== CUSTOM CATEGORY HANDLER ====================
+function toggleCustomCategory() {
+    let select = document.getElementById('newCategory');
+    let customInput = document.getElementById('customCategory');
+    
+    if (select.value === 'custom') {
+        customInput.style.display = 'block';
+        customInput.focus();
+    } else {
+        customInput.style.display = 'none';
+        customInput.value = '';
+    }
+}
+
+function getSelectedCategory() {
+    let select = document.getElementById('newCategory');
+    let customInput = document.getElementById('customCategory');
+    
+    if (select.value === 'custom') {
+        return customInput.value.trim() || 'Misc';
+    }
+    return select.value;
+}
+
+
 // ==================== CRUD OPERATIONS ====================
 
 // Add new material
 function saveNewMaterial() {
     let name = document.getElementById('newName').value.trim();
-    let category = document.getElementById('newCategory').value;
+    let category = getSelectedCategory();
     let unit = document.getElementById('newUnit').value.trim() || 'pieces';
     let stock = parseInt(document.getElementById('newStock').value) || 0;
     
@@ -450,7 +837,7 @@ function saveIssue() {
 function saveCount() {
     let code = document.getElementById('countForm').dataset.code;
     let actual = parseInt(document.getElementById('countQty').value);
-    let reason = document.getElementById('countReason').value;
+    let reason = 'Physical count adjustment'; 
     
     if (isNaN(actual) || actual < 0) {
         alert('Enter valid quantity');
@@ -840,6 +1227,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('searchInput').focus();
 });
 
+
 // ==================== GLOBAL FUNCTIONS ====================
 
 window.showAddForm = showAddForm;
@@ -861,3 +1249,41 @@ window.printBarcodeLabel = printBarcodeLabel;
 window.hideAllForms = hideAllForms;
 window.toggleCamera = toggleCamera;
 window.closeSelectedMaterial = closeSelectedMaterial;
+
+// ==================== REPAIR EXISTING DATA ====================
+function repairData() {
+    console.log('🔧 Repairing data...');
+    let repaired = false;
+    
+    materials = materials.map(m => {
+        let needsFix = false;
+        let fixed = { ...m };
+        
+        // Add missing fields with defaults
+        if (!fixed.code) {
+            fixed.code = 'FIX-' + Date.now() + Math.floor(Math.random() * 1000);
+            needsFix = true;
+        }
+        if (!fixed.name) fixed.name = 'Unknown', needsFix = true;
+        if (!fixed.category) fixed.category = 'Steel', needsFix = true;
+        if (fixed.stock === undefined || fixed.stock === null) fixed.stock = 0, needsFix = true;
+        if (!fixed.unit) fixed.unit = 'pieces', needsFix = true;
+        
+        if (needsFix) repaired = true;
+        return fixed;
+    });
+    
+    if (repaired) {
+        saveMaterials();
+        console.log('✅ Data repaired');
+        updateTable();
+        updateStats();
+    }
+}
+
+// Add repair to initialization
+const originalInit = initDatabase;
+initDatabase = function() {
+    originalInit();
+    setTimeout(repairData, 500); // Repair after loading
+};

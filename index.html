@@ -49,12 +49,14 @@
             <div id="addForm" class="form-card hidden">
                 <h3>➕ Add New Material</h3>
                 <input type="text" id="newName" placeholder="Material Name (e.g., 16mm Round Bar)">
-                <select id="newCategory">
+                <select id="newCategory" onchange="toggleCustomCategory()">
                     <option value="Steel">Steel</option>
                     <option value="Hardware">Hardware</option>
                     <option value="Consumables">Consumables</option>
                     <option value="Paint">Paint</option>
+                    <option value="custom">➕ Add Custom Category...</option>
                 </select>
+                        <input type="text" id="customCategory" placeholder="Enter custom category" style="display: none; margin-top: 10px;">
                 <input type="text" id="newUnit" placeholder="Unit (e.g., pieces, pairs, kg)" value="pieces">
                 <input type="number" id="newStock" placeholder="Quantity">
                 <div class="form-actions">
@@ -93,6 +95,7 @@
                     <button onclick="hideAllForms()" class="btn-cancel">Cancel</button>
                 </div>
             </div>  
+        </div>      
         <!-- Materials Table -->
         <div class="materials-section">
             <div class="table-header">
