@@ -6,7 +6,546 @@ let lastKeyTime = 0;
 let html5QrcodeScanner = null;
 let isScanning = false;
 let activities = [];
+let scanMode = 'add'; 
+// ==================== WEEKLY REPORT FUNCTIONS ====================
 
+// Show weekly report modal
+function showWeeklyReport() {
+    // Set default dates to last 7 days
+    setLast7Days();
+    document.getElementById('reportModal').style.display = 'flex';
+}
+
+// Close report modal
+function closeReportModal() {
+    document.getElementById('reportModal').style.display = 'none';
+    document.getElementById('reportResults').style.display = 'none';
+}
+
+// Set date range to last 7 days
+function setLast7Days() {
+    let end = new Date();
+    let start = new Date();
+    start.setDate(start.getDate() - 7);
+    
+    document.getElementById('reportEndDate').value = end.toISOString().split('T')[0];
+    document.getElementById('reportStartDate').value = start.toISOString().split('T')[0];
+}
+
+// Set date range to this week (Monday - Sunday)
+function setThisWeek() {
+    let now = new Date();
+    let dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    
+    // Calculate Monday (start of week)
+    let monday = new Date(now);
+    let diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Adjust for Sunday
+    monday.setDate(now.getDate() - diff);
+    
+    // Calculate Sunday (end of week)
+    let sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    
+    document.getElementById('reportStartDate').value = monday.toISOString().split('T')[0];
+    document.getElementById('reportEndDate').value = sunday.toISOString().split('T')[0];
+}
+
+// Set date range to last week
+function setLastWeek() {
+    let now = new Date();
+    let dayOfWeek = now.getDay();
+    
+    // Calculate last Monday
+    let lastMonday = new Date(now);
+    let diff = dayOfWeek === 0 ? 13 : dayOfWeek + 6; // Adjust for Sunday
+    lastMonday.setDate(now.getDate() - diff);
+    
+    // Calculate last Sunday
+    let lastSunday = new Date(lastMonday);
+    lastSunday.setDate(lastMonday.getDate() + 6);
+    
+    document.getElementById('reportStartDate').value = lastMonday.toISOString().split('T')[0];
+    document.getElementById('reportEndDate').value = lastSunday.toISOString().split('T')[0];
+}
+
+// Generate weekly report
+function generateWeeklyReport() {
+    let startDate = new Date(document.getElementById('reportStartDate').value);
+    let endDate = new Date(document.getElementById('reportEndDate').value);
+    endDate.setHours(23, 59, 59); // Include the entire end day
+    
+    if (!startDate || !endDate) {
+        alert('Please select both start and end dates');
+        return;
+    }
+    
+    // Filter activities within date range
+    let reportActivities = activities.filter(a => {
+        if (!a || !a.timestamp) return false;
+        let activityDate = new Date(a.timestamp);
+        return activityDate >= startDate && activityDate <= endDate;
+    });
+    
+    // Sort by date (newest first)
+    reportActivities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    // Generate summary
+    let summary = {
+        totalReceives: reportActivities.filter(a => a.action === 'RECEIVE').length,
+        totalIssues: reportActivities.filter(a => a.action === 'ISSUE').length,
+        totalCounts: reportActivities.filter(a => a.action === 'COUNT').length,
+        totalAdds: reportActivities.filter(a => a.action === 'ADD').length,
+        totalDeletes: reportActivities.filter(a => a.action === 'DELETE').length,
+        
+        totalReceiveQty: reportActivities
+            .filter(a => a.action === 'RECEIVE')
+            .reduce((sum, a) => sum + (a.quantity || 0), 0),
+        totalIssueQty: reportActivities
+            .filter(a => a.action === 'ISSUE')
+            .reduce((sum, a) => sum + (a.quantity || 0), 0),
+    };
+    
+    // Display summary
+    let summaryHtml = `
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+            <div style="background: #28a745; color: white; padding: 10px; border-radius: 5px; text-align: center;">
+                <div>📦 Receives</div>
+                <div style="font-size: 24px; font-weight: bold;">${summary.totalReceives}</div>
+                <div>Total Qty: ${summary.totalReceiveQty}</div>
+            </div>
+            <div style="background: #ffc107; color: black; padding: 10px; border-radius: 5px; text-align: center;">
+                <div>✏️ Issues</div>
+                <div style="font-size: 24px; font-weight: bold;">${summary.totalIssues}</div>
+                <div>Total Qty: ${summary.totalIssueQty}</div>
+            </div>
+            <div style="background: #17a2b8; color: white; padding: 10px; border-radius: 5px; text-align: center;">
+                <div>📊 Counts</div>
+                <div style="font-size: 24px; font-weight: bold;">${summary.totalCounts}</div>
+            </div>
+            <div style="background: #6c757d; color: white; padding: 10px; border-radius: 5px; text-align: center;">
+                <div>➕ Adds</div>
+                <div style="font-size: 24px; font-weight: bold;">${summary.totalAdds}</div>
+            </div>
+        </div>
+        <div style="margin-top: 10px; color: #dc3545; text-align: right;">
+            Deleted Items: ${summary.totalDeletes}
+        </div>
+    `;
+    
+    // Build table
+    let tableHtml = '';
+    reportActivities.forEach(a => {
+        let actionColor = a.action === 'RECEIVE' ? '#28a745' : 
+                         a.action === 'ISSUE' ? '#ffc107' :
+                         a.action === 'COUNT' ? '#17a2b8' :
+                         a.action === 'ADD' ? '#007bff' : '#dc3545';
+        
+        tableHtml += `
+            <tr>
+                <td style="padding: 8px; border-bottom: 1px solid #ddd;">${new Date(a.timestamp).toLocaleString()}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #ddd;">${a.material_name || a.material_code || '-'}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #ddd;"><span style="background: ${actionColor}; color: white; padding: 3px 8px; border-radius: 3px;">${a.action}</span></td>
+                <td style="padding: 8px; border-bottom: 1px solid #ddd;">${a.quantity || '-'}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #ddd;">${a.note || '-'}</td>
+            </tr>
+        `;
+    });
+    
+    if (tableHtml === '') {
+        tableHtml = '<tr><td colspan="5" style="padding: 20px; text-align: center;">No activities found in this date range</td></tr>';
+    }
+    
+    document.getElementById('reportSummary').innerHTML = summaryHtml;
+    document.getElementById('reportTableBody').innerHTML = tableHtml;
+    document.getElementById('reportResults').style.display = 'block';
+}
+
+// Export report to Excel
+function exportReportToExcel() {
+    let startDate = document.getElementById('reportStartDate').value;
+    let endDate = document.getElementById('reportEndDate').value;
+    let reportActivities = getCurrentReportActivities();
+    
+    if (reportActivities.length === 0) {
+        alert('No data to export');
+        return;
+    }
+    
+    // Create CSV content
+    let csv = "Date,Time,Material Code,Material Name,Action,Quantity,Notes\n";
+    
+    reportActivities.forEach(a => {
+        let date = new Date(a.timestamp);
+        let dateStr = date.toLocaleDateString();
+        let timeStr = date.toLocaleTimeString();
+        let materialCode = a.material_code || '';
+        let materialName = a.material_name || '';
+        let action = a.action || '';
+        let quantity = a.quantity || '';
+        let notes = a.note || '';
+        
+        csv += `"${dateStr}","${timeStr}","${materialCode}","${materialName}","${action}","${quantity}","${notes}"\n`;
+    });
+    
+    // Download CSV
+    let blob = new Blob([csv], { type: 'text/csv' });
+    let url = window.URL.createObjectURL(blob);
+    let a = document.createElement('a');
+    a.href = url;
+    a.download = `inventory_report_${startDate}_to_${endDate}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+}
+
+// Helper to get current report activities
+function getCurrentReportActivities() {
+    let startDate = new Date(document.getElementById('reportStartDate').value);
+    let endDate = new Date(document.getElementById('reportEndDate').value);
+    endDate.setHours(23, 59, 59);
+    
+    return activities.filter(a => {
+        if (!a || !a.timestamp) return false;
+        let activityDate = new Date(a.timestamp);
+        return activityDate >= startDate && activityDate <= endDate;
+    }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+}
+
+// Print report
+function printReport() {
+    let startDate = document.getElementById('reportStartDate').value;
+    let endDate = document.getElementById('reportEndDate').value;
+    let summary = document.getElementById('reportSummary').innerHTML;
+    let table = document.getElementById('reportTableBody').innerHTML;
+    
+    let printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+        <html>
+            <head>
+                <title>Inventory Report ${startDate} to ${endDate}</title>
+                <style>
+                    body { font-family: Arial, sans-serif; padding: 20px; }
+                    h1 { color: #333; }
+                    .summary { margin: 20px 0; }
+                    table { width: 100%; border-collapse: collapse; }
+                    th { background: #007bff; color: white; padding: 8px; text-align: left; }
+                    td { padding: 8px; border-bottom: 1px solid #ddd; }
+                </style>
+            </head>
+            <body>
+                <h1>Inventory Activity Report</h1>
+                <p>Date Range: ${startDate} to ${endDate}</p>
+                <div class="summary">${summary}</div>
+                <h3>Detailed Activity</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Time</th>
+                            <th>Material</th>
+                            <th>Action</th>
+                            <th>Quantity</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${table}
+                    </tbody>
+                </table>
+            </body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+}
+
+// Simple export all to Excel (quick export)
+function exportToExcel() {
+    // Create CSV for all materials
+    let csv = "Code,Material Name,Category,Stock,Unit,Status\n";
+    
+    materials.forEach(m => {
+        let status = getStockStatus(m.stock);
+        csv += `"${m.code}","${m.name}","${m.category}","${m.stock}","${m.unit}","${status}"\n`;
+    });
+    
+    // Download CSV
+    let blob = new Blob([csv], { type: 'text/csv' });
+    let url = window.URL.createObjectURL(blob);
+    let a = document.createElement('a');
+    a.href = url;
+    a.download = `inventory_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+}
+// ==================== LOGIN SYSTEM (MODAL VERSION) ====================
+let currentUser = null; // 'admin' or 'guest'
+
+// Check if user was already logged in
+function checkLoginStatus() {
+    let savedUser = localStorage.getItem('currentUser');
+    if (savedUser === 'admin' || savedUser === 'guest') {
+        currentUser = savedUser;
+        applyPermissions();
+        
+        // Show user badge
+        document.getElementById('userBadge').style.display = 'flex';
+        document.getElementById('userRole').textContent = currentUser === 'admin' ? '👑 Admin' : '👤 Guest';
+        
+        // Show password change button for admin
+        if (currentUser === 'admin') {
+            let changeBtn = document.getElementById('changePasswordBtn');
+            if (changeBtn) changeBtn.style.display = 'inline-block';
+        }
+    } else {
+        // Not logged in - show login modal immediately
+        setTimeout(() => {
+            showLoginModal();
+        }, 500); // Small delay to let the page load first
+    }
+}
+// Show login modal (centered overlay)
+function showLoginModal() {
+    document.getElementById('loginModal').style.display = 'flex';
+    document.getElementById('adminPassword').focus();
+}
+// Close login modal
+function closeLoginModal() {
+    document.getElementById('loginModal').style.display = 'none';
+    document.getElementById('loginError').style.display = 'none';
+    document.getElementById('adminPassword').value = '';
+}
+// Login as Admin (from modal)
+function loginAsAdmin() {
+    let password = document.getElementById('adminPassword').value;
+    let storedPassword = localStorage.getItem('adminPassword') || 'admin123';
+    
+    if (password === storedPassword) {
+        currentUser = 'admin';
+        localStorage.setItem('currentUser', 'admin');
+        closeLoginModal();
+        
+        // Show user badge - INLINE CODE
+        let userBadge = document.getElementById('userBadge');
+        let userRole = document.getElementById('userRole');
+        let changeBtn = document.getElementById('changePasswordBtn');
+        
+        if (userBadge) userBadge.style.display = 'flex';
+        if (userRole) userRole.textContent = '👑 Admin';
+        
+        applyPermissions();
+        
+        // Show password change button
+        if (changeBtn) changeBtn.style.display = 'inline-block';
+    } else {
+        document.getElementById('loginError').style.display = 'flex';
+    }
+}
+// Login as Guest
+function loginAsGuest() {
+    currentUser = 'guest';
+    localStorage.setItem('currentUser', 'guest');
+    closeLoginModal();
+    
+    // Show user badge - INLINE CODE
+    let userBadge = document.getElementById('userBadge');
+    let userRole = document.getElementById('userRole');
+    let changeBtn = document.getElementById('changePasswordBtn');
+    
+    if (userBadge) userBadge.style.display = 'flex';
+    if (userRole) userRole.textContent = '👤 Guest';
+    
+    applyPermissions();
+    
+    // Hide password change button for guest
+    if (changeBtn) changeBtn.style.display = 'none';
+}
+// Logout
+function logout() {
+    currentUser = null;
+    localStorage.removeItem('currentUser');
+    
+    // Hide user badge
+    let userBadge = document.getElementById('userBadge');
+    let changeBtn = document.getElementById('changePasswordBtn');
+    
+    if (userBadge) userBadge.style.display = 'none';
+    if (changeBtn) changeBtn.style.display = 'none';
+    
+    applyPermissions();
+    closeLoginModal();
+    closePasswordModal();
+    
+    // Close any open forms
+    hideAllForms();
+    if (selectedMaterial) {
+        document.getElementById('selectedMaterial').classList.add('hidden');
+        selectedMaterial = null;
+    }
+    
+    // Show login modal again
+    setTimeout(() => {
+        showLoginModal();
+    }, 300);
+}
+// Toggle scan mode between Add and Remove
+function toggleScanMode() {
+    let toggle = document.getElementById('scanModeToggle');
+    let modeText = document.getElementById('modeText');
+    let modeIcon = document.getElementById('modeIcon');
+    
+    if (toggle.checked) {
+        scanMode = 'remove';
+        modeText.textContent = 'Remove';
+        modeText.style.color = '#dc3545';
+        modeIcon.textContent = '➖';
+    } else {
+        scanMode = 'add';
+        modeText.textContent = 'Add';
+        modeText.style.color = '#28a745';
+        modeIcon.textContent = '➕';
+    }
+    
+    // Show quick feedback
+    showScanFeedback(`Mode: ${scanMode.toUpperCase()}`, null, 'info');
+}
+
+// Initialize scan mode toggle
+function initScanMode() {
+    // Set default state (Add mode)
+    let toggle = document.getElementById('scanModeToggle');
+    if (toggle) {
+        toggle.checked = false;
+        scanMode = 'add';
+        document.getElementById('modeText').textContent = 'Add';
+        document.getElementById('modeText').style.color = '#28a745';
+        document.getElementById('modeIcon').textContent = '➕';
+    }
+}
+// ==================== PASSWORD MANAGEMENT ====================
+// Show password change modal
+function showPasswordModal() {
+    document.getElementById('passwordModal').style.display = 'flex';
+    document.getElementById('newPassword').focus();
+}
+// Close password modal
+function closePasswordModal() {
+    document.getElementById('passwordModal').style.display = 'none';
+    document.getElementById('newPassword').value = '';
+    document.getElementById('confirmPassword').value = '';
+    document.getElementById('passwordError').style.display = 'none';
+}
+// Change password
+function changePassword() {
+    let newPass = document.getElementById('newPassword').value;
+    let confirmPass = document.getElementById('confirmPassword').value;
+    
+    if (!newPass) {
+        showPasswordError('Password cannot be empty');
+        return;
+    }
+    
+    if (newPass !== confirmPass) {
+        showPasswordError('Passwords do not match');
+        return;
+    }
+    
+    localStorage.setItem('adminPassword', newPass);
+    closePasswordModal();
+    alert('✅ Password updated successfully!');
+}
+// Delete password (no login required)
+function deletePassword() {
+    if (confirm('⚠️ This will remove password protection. Anyone can access admin features without login. Continue?')) {
+        localStorage.removeItem('adminPassword');
+        closePasswordModal();
+        alert('✅ Password removed. Admin login no longer required.');
+    }
+}
+// Show password error
+function showPasswordError(message) {
+    let errorDiv = document.getElementById('passwordError');
+    errorDiv.innerHTML = `<span>❌</span> ${message}`;
+    errorDiv.style.display = 'flex';
+}
+// Apply permissions based on user role
+function applyPermissions() {
+    let actionButtons = document.querySelectorAll('.action-btn.delete-btn');
+    let stockActions = document.querySelectorAll('.btn-receive, .btn-issue, .btn-count, .btn-edit');
+    let addButton = document.querySelector('.btn-add');
+    let deleteButtons = document.querySelectorAll('.btn-delete');
+    let viewButtons = document.querySelectorAll('.action-btn.edit-btn'); // These are the "View" buttons
+    
+    // Get admin-only buttons
+    let settingsButton = document.getElementById('settingsToggle');
+    let weeklyReportButton = document.querySelector('.btn-report');
+    
+    if (currentUser === 'admin') {
+        // Admin: Show everything
+        actionButtons.forEach(btn => btn.style.display = 'inline-block');
+        stockActions.forEach(btn => btn.style.display = 'inline-block');
+        if (addButton) addButton.style.display = 'inline-block';
+        deleteButtons.forEach(btn => btn.style.display = 'inline-block');
+        // View buttons always show
+        viewButtons.forEach(btn => btn.style.display = 'inline-block');
+        
+        // Show admin-only buttons
+        if (settingsButton) settingsButton.style.display = 'inline-block';
+        if (weeklyReportButton) weeklyReportButton.style.display = 'inline-block';
+    } else if (currentUser === 'guest') {
+        // Guest: Hide all action buttons, keep only View and Print
+        actionButtons.forEach(btn => btn.style.display = 'none');
+        stockActions.forEach(btn => btn.style.display = 'none');
+        if (addButton) addButton.style.display = 'none';
+        deleteButtons.forEach(btn => btn.style.display = 'none');
+        // View buttons stay
+        viewButtons.forEach(btn => btn.style.display = 'inline-block');
+        
+        // Hide admin-only buttons
+        if (settingsButton) settingsButton.style.display = 'none';
+        if (weeklyReportButton) weeklyReportButton.style.display = 'none';
+        
+        // Hide any open forms
+        hideAllForms();
+        if (selectedMaterial) {
+            // Refresh the selected material view to hide actions
+            selectMaterial(selectedMaterial.code);
+        }
+    } else {
+        // Not logged in: Show login options, hide everything else
+        actionButtons.forEach(btn => btn.style.display = 'none');
+        stockActions.forEach(btn => btn.style.display = 'none');
+        if (addButton) addButton.style.display = 'none';
+        deleteButtons.forEach(btn => btn.style.display = 'none');
+        viewButtons.forEach(btn => btn.style.display = 'none');
+        
+        // Hide admin-only buttons
+        if (settingsButton) settingsButton.style.display = 'none';
+        if (weeklyReportButton) weeklyReportButton.style.display = 'none';
+        
+        hideAllForms();
+        if (selectedMaterial) {
+            document.getElementById('selectedMaterial').classList.add('hidden');
+            selectedMaterial = null;
+        }
+    }
+    
+    // Update table to reflect permissions
+    updateTable();
+}
+// Click outside to close
+document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('login-overlay')) {
+        closeLoginModal();
+        closePasswordModal();
+    }
+});
+// Escape key to close
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeLoginModal();
+        closePasswordModal();
+    }
+});
 // Initialize database
 function initDatabase() {
     console.log('Initializing database...');
@@ -31,11 +570,12 @@ function initDatabase() {
                 // Ensure all fields exist with defaults
                 return {
                     id: m.id || Date.now() + Math.floor(Math.random() * 1000),
-                    code: m.code || Math.floor(100000 + Math.random() * 900000).toString(),
+                    code: m.code || Math.floor(1 + Math.random() * 999).toString(),
                     name: m.name || 'Unknown Material',
                     category: m.category || 'Steel',
                     stock: typeof m.stock === 'number' ? m.stock : 0,
-                    unit: m.unit || 'pieces'
+                    unit: m.unit || 'pieces',
+                    remarks: m.remarks || ''
                 };
             }).filter(m => m !== null); // Remove any nulls from mapping
             
@@ -87,11 +627,12 @@ function initDatabase() {
                     .filter(m => m !== null && typeof m === 'object')
                     .map(m => ({
                         id: m.id || Date.now() + Math.floor(Math.random() * 1000),
-                        code: m.code || Math.floor(100000 + Math.random() * 900000).toString(),
+                        code: m.code || Math.floor(1 + Math.random() * 999).toString(),
                         name: m.name || 'Unknown Material',
                         category: m.category || 'Steel',
                         stock: typeof m.stock === 'number' ? m.stock : 0,
-                        unit: m.unit || 'pieces'
+                        unit: m.unit || 'pieces',
+                        remarks: m.remarks || ''
                     }));
                 
                 // Only update if different from current
@@ -116,7 +657,6 @@ function initDatabase() {
         });
     }
 }
-
 // Save materials
 function saveMaterials() {
 
@@ -132,26 +672,27 @@ function saveMaterials() {
     updateTable();
     updateCategoryFilter();
 }
-
 // Save activities
 function saveActivities() {
     localStorage.setItem('activities', JSON.stringify(activities));
 }
-
 // ==================== CORE FUNCTIONS ====================
 function generateRandomId() {
-    // Generate random 6-digit number
-    let randomId = Math.floor(100000 + Math.random() * 900000); // 100000-999999
+    // Generate random 1-3 digit number
+    let randomId = Math.floor(1 + Math.random() * 999); // 1-999
     return randomId.toString();
 }
-
 // Get stock status
 function getStockStatus(stock) {
     if (stock <= 5) return 'Critical';
     if (stock <= 20) return 'Low';
     return 'OK';
 }
-
+// Clear remarks field helper
+function clearRemarksField(fieldId) {
+    let field = document.getElementById(fieldId);
+    if (field) field.value = '';
+}
 // Update stats
 function updateStats() {
     document.getElementById('totalItems').textContent = materials.length;
@@ -160,7 +701,6 @@ function updateStats() {
     document.getElementById('lowCount').textContent = 
         materials.filter(m => m.stock > 5 && m.stock <= 20).length;
 }
-
 // Update table
 function updateTable() {
     let filter = document.getElementById('categoryFilter').value;
@@ -194,28 +734,48 @@ function updateTable() {
         let statusClass = status === 'Critical' ? 'status-critical' : 
                          status === 'Low' ? 'status-low' : 'status-ok';
         
+        // Build actions based on user role - THIS IS THE PERMISSION VERSION
+        let actions = `<div class="action-buttons">`;
+        
+        // View button - always show if logged in
+        if (currentUser) {
+            actions += `<button onclick="selectMaterial('${code}')" class="action-btn edit-btn">View</button>`;
+        }
+        
+        // Print button - always show if logged in
+        if (currentUser) {
+            actions += `<button onclick="printSingleBarcode('${code}', '${name}')" class="action-btn print-btn">🖨️</button>`;
+        }
+        
+        // Delete button - only for admin
+        if (currentUser === 'admin') {
+            actions += `<button onclick="deleteMaterial('${code}')" class="action-btn delete-btn">✗</button>`;
+        }
+        
+        actions += `</div>`;
+        
+        // If not logged in, show login prompt
+        if (!currentUser) {
+            actions = `<div style="color: #999; font-size: 12px;">Login to interact</div>`;
+        }
+        
         html += `
             <tr>
                 <td><strong>${code}</strong></td>
-                <td>${name}</td>
+                <td>${name}
+                ${(currentUser === 'admin' && m.remarks) ? `<br><small style="color: #666; font-style: italic;">📝 ${m.remarks}</small>` : ''}
+                </td>
                 <td>${category}</td>
                 <td>${stock}</td>
                 <td>${unit}</td>
                 <td><span class="status-badge ${statusClass}">${status}</span></td>
-                <td>
-                    <div class="action-buttons">
-                        <button onclick="selectMaterial('${code}')" class="action-btn edit-btn">View</button>
-                        <button onclick="printSingleBarcode('${code}', '${name}')" class="action-btn print-btn">🖨️</button>
-                        <button onclick="deleteMaterial('${code}')" class="action-btn delete-btn">✗</button>
-                    </div>
-                </td>
+                <td>${actions}</td>
             </tr>
         `;
     });
     
     document.getElementById('tableBody').innerHTML = html;
 }
-
 // ==================== DUPLICATE DETECTION ====================
 function checkDuplicateName(name, currentCode = null) {
     if (!name || name.trim() === '') return false;
@@ -235,7 +795,6 @@ function checkDuplicateName(name, currentCode = null) {
 function isIdUnique(id) {
     return !materials.some(m => m && m.code === id);
 }
-
 // Update category filter dropdown with all categories
 function updateCategoryFilter() {
     let filterSelect = document.getElementById('categoryFilter');
@@ -269,14 +828,11 @@ function updateCategoryFilter() {
         filterSelect.appendChild(option);
     });
 }
-
 // Filter materials
 function filterMaterials() {
     updateTable();
 }
-
 // ==================== ENHANCED SEARCH FUNCTIONS ====================
-
 // Global search variables
 let searchTimeout = null;
 let lastSearchTerm = '';
@@ -295,7 +851,6 @@ function setupEnhancedSearch() {
     
     console.log('🔍 Enhanced search initialized');
 }
-
 // Handle real-time search as user types
 function handleSearchInput(e) {
     let searchTerm = e.target.value.trim();
@@ -317,7 +872,6 @@ function handleSearchInput(e) {
         performSmartSearch(searchTerm);
     }, 300);
 }
-
 // Handle Enter key press
 function handleSearchKeypress(e) {
     if (e.key === 'Enter') {
@@ -336,7 +890,6 @@ function handleSearchKeypress(e) {
         }
     }
 }
-
 // Perform smart search (fuzzy, case-insensitive)
 function performSmartSearch(searchTerm, prioritizeExact = false) {
     if (!searchTerm || searchTerm.length < 1) {
@@ -401,7 +954,6 @@ function performSmartSearch(searchTerm, prioritizeExact = false) {
     }
         return filteredResults;
 }
-
 // Show search results in table
 function showSearchResults(results, searchTerm) {
     let tableBody = document.getElementById('tableBody');
@@ -429,23 +981,31 @@ function showSearchResults(results, searchTerm) {
         let statusClass = status === 'Critical' ? 'status-critical' : 
                          status === 'Low' ? 'status-low' : 'status-ok';
         
-        html += `
-            <tr>
-                <td><strong>${highlightedCode}</strong></td>
-                <td>${highlightedName}</td>
-                <td>${category}</td>
-                <td>${stock}</td>
-                <td>${unit}</td>
-                <td><span class="status-badge ${statusClass}">${status}</span></td>
-                <td>
-                    <div class="action-buttons">
-                        <button onclick="selectMaterial('${code}')" class="action-btn edit-btn">View</button>
-                        <button onclick="printSingleBarcode('${code}', '${name}')" class="action-btn print-btn">🖨️</button>
-                        <button onclick="deleteMaterial('${code}')" class="action-btn delete-btn">✗</button>
-                    </div>
-                </td>
-            </tr>
-        `;
+// In showSearchResults, replace that whole block with just:
+let actions = `<div class="action-buttons">`;
+actions += `<button onclick="selectMaterial('${code}')" class="action-btn edit-btn">View</button>`;
+actions += `<button onclick="printSingleBarcode('${code}', '${name}')" class="action-btn print-btn">🖨️</button>`;
+actions += `</div>`;
+
+// If not logged in, show login prompt
+if (!currentUser) {
+    actions = `<div style="color: #999; font-size: 12px;">Login to interact</div>`;
+}
+
+html += `
+    <tr>
+        <td><strong>${code}</strong></td>
+        <td>
+            ${name}
+            ${m.remarks ? `<br><small style="color: #666; font-style: italic;">📝 ${m.remarks}</small>` : ''}
+        </td>
+        <td>${category}</td>
+        <td>${stock}</td>
+        <td>${unit}</td>
+        <td><span class="status-badge ${statusClass}">${status}</span></td>
+        <td>${actions}</td>
+    </tr>
+`;
     });
     
     // Add search result summary
@@ -458,7 +1018,6 @@ function showSearchResults(results, searchTerm) {
     
     tableBody.innerHTML = resultSummary + html;
 }
-
 // Highlight matching text
 function highlightMatch(text, searchTerm) {
     if (!text || !searchTerm) return text;
@@ -475,7 +1034,6 @@ function highlightMatch(text, searchTerm) {
     
     return `${before}<span style="background-color: #fff3cd; font-weight: bold;">${match}</span>${after}`;
 }
-
 // Show no results message
 function showNoResults(searchTerm) {
     let tableBody = document.getElementById('tableBody');
@@ -491,118 +1049,28 @@ function showNoResults(searchTerm) {
         </tr>
     `;
 }
-
-// Show search suggestions as user types
-function showSearchSuggestions(searchTerm) {
-    if (searchTerm.length < 2) return;
-    
-    // Get top 5 matches
-    let suggestions = materials
-        .map(m => ({
-            material: m,
-            relevance: getRelevanceScore(m, searchTerm)
-        }))
-        .filter(s => s.relevance > 0)
-        .sort((a, b) => b.relevance - a.relevance)
-        .slice(0, 5)
-        .map(s => s.material);
-    
-    if (suggestions.length === 0) return;
-    
-    // Create or update suggestions dropdown
-    let existingDropdown = document.getElementById('searchSuggestions');
-    if (existingDropdown) existingDropdown.remove();
-    
-    let dropdown = document.createElement('div');
-    dropdown.id = 'searchSuggestions';
-    dropdown.style.cssText = `
-        position: absolute;
-        top: 100%;
-        left: 0;
-        right: 0;
-        background: white;
-        border: 1px solid #ddd;
-        border-radius: 0 0 8px 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        z-index: 1000;
-        max-height: 300px;
-        overflow-y: auto;
-    `;
-    
-    suggestions.forEach(m => {
-        let item = document.createElement('div');
-        item.style.cssText = `
-            padding: 10px 15px;
-            cursor: pointer;
-            border-bottom: 1px solid #eee;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        `;
-        item.onmouseover = () => item.style.background = '#f5f5f5';
-        item.onmouseout = () => item.style.background = 'white';
-        item.onclick = () => {
-            document.getElementById('searchInput').value = m.code;
-            selectMaterial(m.code);
-            dropdown.remove();
-        };
-        
-        item.innerHTML = `
-            <div>
-                <strong>${m.code}</strong><br>
-                <small>${m.name}</small>
-            </div>
-            <span class="status-badge ${getStockStatus(m.stock) === 'Critical' ? 'status-critical' : 
-                                      getStockStatus(m.stock) === 'Low' ? 'status-low' : 'status-ok'}">
-                ${m.stock} ${m.unit}
-            </span>
-        `;
-        
-        dropdown.appendChild(item);
-    });
-    
-    // Position the dropdown under search box
-    let searchBox = document.querySelector('.search-box');
-    searchBox.style.position = 'relative';
-    searchBox.appendChild(dropdown);
-}
-
-// Calculate relevance score for suggestions
-function getRelevanceScore(material, searchTerm) {
-    let score = 0;
-    let searchLower = searchTerm.toLowerCase();
-    let nameLower = (material.name || '').toLowerCase();
-    let codeLower = (material.code || '').toLowerCase();
-    
-    if (codeLower === searchLower) score += 100;
-    else if (nameLower === searchLower) score += 90;
-    else if (codeLower.startsWith(searchLower)) score += 50;
-    else if (nameLower.startsWith(searchLower)) score += 40;
-    else if (codeLower.includes(searchLower)) score += 20;
-    else if (nameLower.includes(searchLower)) score += 10;
-    
-    return score;
-}
-
 // Clear search and show all materials
 function clearSearch() {
     document.getElementById('searchInput').value = '';
     updateTable();
     hideSearchResults();
 }
-
 // Hide any search-specific UI
 function hideSearchResults() {
     // Table will show all materials via updateTable()
 }
-
-// Legacy search function (keeping for compatibility)
+// Legacy search function 
 function searchMaterial(barcode) {
     let searchTerm = barcode || document.getElementById('searchInput').value.trim();
     if (!searchTerm || searchTerm === '') return;
+    
+    if (searchTerm.toLowerCase() === 'enter') {
+        document.getElementById('searchInput').value = '';
+        return;
+    }
+    
     performSmartSearch(searchTerm, true);
 }
-
 // Select material
 function selectMaterial(code) {
     let material = materials.find(m => m.code === code);
@@ -614,28 +1082,11 @@ function selectMaterial(code) {
     let statusClass = status === 'Critical' ? 'status-critical' : 
                       status === 'Low' ? 'status-low' : 'status-ok';
     
-    let html = `
-        <h2>Selected: ${material.name} (${material.code})</h2>
-        <div class="material-details">
-            <div class="detail-item">
-                <div class="detail-label">Current Stock</div>
-                <div class="detail-value ${statusClass}">${material.stock} ${material.unit}</div>
-            </div>
-            <div class="detail-item">
-                <div class="detail-label">Category</div>
-                <div class="detail-value">${material.category}</div>
-            </div>
-            <div class="detail-item">
-                <div class="detail-label">Unit</div>
-                <div class="detail-value">${material.unit}</div>
-            </div>
-            <div class="detail-item">
-                <div class="detail-label">Last Updated</div>
-                <div class="detail-value">${new Date().toLocaleDateString()}</div>
-            </div>
-        </div>
-        
-        <!-- Stock Actions -->
+    // Stock Actions - only show for admin
+// Stock Actions - only show for admin
+let stockActions = '';
+if (currentUser === 'admin') {
+    stockActions = `
         <div style="margin: 15px 0; padding: 10px; background: #f8f9fa; border-radius: 8px;">
             <h3 style="margin-bottom: 10px; color: #495057;">📦 Stock Actions</h3>
             <div class="material-actions">
@@ -644,8 +1095,13 @@ function selectMaterial(code) {
                 <button onclick="showCountForm('${material.code}')" class="btn-count">📊 Count</button>
             </div>
         </div>
-        
-        <!-- Edit Details -->
+    `;
+}
+
+// Edit Details - only show for admin
+let editActions = '';
+if (currentUser === 'admin') {
+    editActions = `
         <div style="margin: 15px 0; padding: 10px; background: #f8f9fa; border-radius: 8px;">
             <h3 style="margin-bottom: 10px; color: #495057;">✏️ Edit Details</h3>
             <div class="material-actions">
@@ -656,13 +1112,54 @@ function selectMaterial(code) {
             </div>
         </div>
     `;
+} else if (currentUser === 'guest') {
+    // Guest - only show print button
+    editActions = `
+        <div style="margin: 15px 0; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+            <h3 style="margin-bottom: 10px; color: #495057;">🖨️ Actions</h3>
+            <div class="material-actions">
+                <button onclick="printSingleBarcode('${material.code}', '${material.name}')" class="btn-print">🖨️ Print Label</button>
+            </div>
+        </div>
+    `;
+}
+
+// Build the complete HTML
+let html = `
+    <h2>Selected: ${material.name} (${material.code})</h2>
+    <div class="material-details">
+        <div class="detail-item">
+            <div class="detail-label">Current Stock</div>
+            <div class="detail-value ${statusClass}">${material.stock} ${material.unit}</div>
+        </div>
+        <div class="detail-item">
+            <div class="detail-label">Category</div>
+            <div class="detail-value">${material.category}</div>
+        </div>
+        <div class="detail-item">
+            <div class="detail-label">Unit</div>
+            <div class="detail-value">${material.unit}</div>
+        </div>
+        <div class="detail-item">
+            <div class="detail-label">Last Updated</div>
+            <div class="detail-value">${new Date().toLocaleDateString()}</div>
+        </div>
+    </div>
     
+    ${material.remarks ? `
+    <div style="margin: 15px 0; padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+        <strong style="color: #856404;">📝 Remarks:</strong>
+        <p style="margin: 5px 0 0; color: #856404;">${material.remarks}</p>
+    </div>
+    ` : ''}
+
+    ${stockActions}
+    ${editActions}
+`;
     document.getElementById('selectedMaterialContent').innerHTML = html;
     document.getElementById('selectedMaterial').classList.remove('hidden');
 }
-
 // ==================== FORM HANDLING ====================
-
 function hideAllForms() {
     document.getElementById('addForm').classList.add('hidden');
     document.getElementById('receiveForm').classList.add('hidden');
@@ -674,13 +1171,14 @@ function hideAllForms() {
     let editUnitForm = document.getElementById('editUnitForm');
     if (editUnitForm) editUnitForm.remove();
 }
-
 function showAddForm() {
     hideAllForms();
     document.getElementById('addForm').classList.remove('hidden');
-    document.getElementById('newName').focus();
+    
+    // Focus on the first material name field
+    let firstNameField = document.querySelector('.material-name');
+    if (firstNameField) firstNameField.focus();
 }
-
 function showReceiveForm(materialCode) {
     hideAllForms();
     let material = materials.find(m => m.code === materialCode);
@@ -691,8 +1189,8 @@ function showReceiveForm(materialCode) {
     document.getElementById('receiveForm').dataset.code = material.code;
     document.getElementById('receiveForm').classList.remove('hidden');
     document.getElementById('receiveQty').focus();
+    clearRemarksField('receiveRemarks');
 }
-
 function showIssueForm(materialCode) {
     hideAllForms();
     let material = materials.find(m => m.code === materialCode);
@@ -703,22 +1201,74 @@ function showIssueForm(materialCode) {
     document.getElementById('issueForm').dataset.code = material.code;
     document.getElementById('issueForm').classList.remove('hidden');
     document.getElementById('issueQty').focus();
+    clearRemarksField('issueRemarks');
 }
 
+// Show count form
 function showCountForm(materialCode) {
     hideAllForms();
     let material = materials.find(m => m.code === materialCode);
     if (!material) return;
     
     document.getElementById('countMaterialInfo').innerHTML = 
-        `<strong>${material.name}</strong> (${material.code})<br>System Stock: ${material.stock} ${material.unit}`;
+        `<strong>${material.name}</strong> (${material.code})<br>Current Stock: ${material.stock} ${material.unit}`;
     document.getElementById('countForm').dataset.code = material.code;
     document.getElementById('countForm').classList.remove('hidden');
     document.getElementById('countQty').focus();
+    clearRemarksField('countRemarks');
 }
-
+// Stock count adjustment
+function saveCount() {
+    let code = document.getElementById('countForm').dataset.code;
+    let actual = parseInt(document.getElementById('countQty').value);
+    let remarks = document.getElementById('countRemarks').value.trim();
+    
+    if (isNaN(actual) || actual < 0) {
+        alert('Enter valid quantity');
+        return;
+    }
+    
+    let material = materials.find(m => m.code === code);
+    if (!material) {
+        alert('Material not found');
+        return;
+    }
+    
+    let oldStock = material.stock;
+    let difference = actual - oldStock;
+    material.stock = actual;
+    
+    // Update material remarks if provided
+    if (remarks) {
+        material.remarks = remarks;
+    }
+    
+    saveMaterials();
+    
+    // Add activity
+    activities.unshift({
+        id: Date.now(),
+        action: 'COUNT',
+        material_code: code,
+        material_name: material.name,
+        quantity: difference,
+        old_stock: oldStock,
+        new_stock: actual,
+        note: remarks || 'Physical count adjustment',
+        timestamp: new Date().toLocaleString()
+    });
+    saveActivities();
+    
+    updateTable();
+    selectMaterial(code);
+    hideAllForms();
+    
+    document.getElementById('countQty').value = '';
+    clearRemarksField('countRemarks');
+    
+    alert(`✅ Stock updated\nOld: ${oldStock} → New: ${actual}`);
+}
 // ==================== EDIT CATEGORY & UNIT FUNCTIONS ====================
-
 function showEditCategoryForm(materialCode) {
     hideAllForms();
     let material = materials.find(m => m.code === materialCode);
@@ -785,7 +1335,6 @@ function showEditCategoryForm(materialCode) {
     tempDiv.innerHTML = formHtml;
     document.getElementById('actionForms').appendChild(tempDiv);
 }
-
 function toggleEditCustomCategory() {
     let select = document.getElementById('editCategorySelect');
     let customInput = document.getElementById('editCustomCategory');
@@ -798,7 +1347,6 @@ function toggleEditCustomCategory() {
         customInput.value = '';
     }
 }
-
 function saveCategoryUpdate(code) {
     let material = materials.find(m => m.code === code);
     if (!material) return;
@@ -850,9 +1398,7 @@ function saveCategoryUpdate(code) {
     
     alert(`✅ Category updated: ${oldCategory} → ${newCategory}`);
 }
-
 // ==================== EDIT UNIT FUNCTIONS ====================
-
 function showEditUnitForm(materialCode) {
     hideAllForms();
     let material = materials.find(m => m.code === materialCode);
@@ -888,7 +1434,6 @@ function showEditUnitForm(materialCode) {
     tempDiv.innerHTML = formHtml;
     document.getElementById('actionForms').appendChild(tempDiv);
 }
-
 function toggleEditCustomUnit() {
     let select = document.getElementById('editUnitSelect');
     let customInput = document.getElementById('editCustomUnit');
@@ -983,13 +1528,177 @@ function getSelectedCategory() {
     return category.charAt(0).toUpperCase() + category.slice(1).toLowerCase();
 }
 
-// ==================== CRUD OPERATIONS ====================
+// ==================== BULK MATERIAL ADD FUNCTIONS ====================
+
+// Add a new material row to the bulk add form
+function addMaterialRow() {
+    let container = document.getElementById('materialsContainer');
+    let rowCount = container.querySelectorAll('.material-row').length;
+    
+    let rowHtml = `
+        <div class="material-row" data-row="${rowCount}">
+            <input type="text" class="material-name" placeholder="Material Name (e.g., 16mm Round Bar)">
+            <input type="text" class="material-category" placeholder="Category (auto-created if new)">
+            <input type="text" class="material-unit" placeholder="Unit (pieces, kg, etc.)" value="pieces">
+            <input type="number" class="material-stock" placeholder="Quantity" value="0">
+            <input type="text" class="material-remarks" placeholder="Remarks (optional)">
+            <button type="button" class="remove-row-btn" onclick="removeMaterialRow(this)">✗</button>
+        </div>
+    `;
+    
+    container.insertAdjacentHTML('beforeend', rowHtml);
+    
+    // Show remove buttons if we have more than 1 row
+    let removeButtons = container.querySelectorAll('.remove-row-btn');
+    if (removeButtons.length > 1) {
+        removeButtons.forEach(btn => btn.style.display = 'flex');
+    }
+}
+
+// Remove a material row from the bulk add form
+function removeMaterialRow(button) {
+    let row = button.closest('.material-row');
+    let container = document.getElementById('materialsContainer');
+    
+    row.remove();
+    
+    // Hide remove buttons if we only have 1 row left
+    let remainingRows = container.querySelectorAll('.material-row');
+    if (remainingRows.length === 1) {
+        let removeBtn = remainingRows[0].querySelector('.remove-row-btn');
+        if (removeBtn) removeBtn.style.display = 'none';
+    }
+    
+    // Re-index the rows
+    remainingRows.forEach((row, index) => {
+        row.setAttribute('data-row', index);
+    });
+}
+
+// Save all materials from the bulk add form
+function saveBulkMaterials() {
+    let container = document.getElementById('materialsContainer');
+    let rows = container.querySelectorAll('.material-row');
+    let addedMaterials = [];
+    let errors = [];
+    
+    rows.forEach((row, index) => {
+        let name = row.querySelector('.material-name').value.trim();
+        let category = row.querySelector('.material-category').value.trim();
+        let unit = row.querySelector('.material-unit').value.trim() || 'pieces';
+        let stock = parseInt(row.querySelector('.material-stock').value) || 0;
+        let remarks = row.querySelector('.material-remarks').value.trim();
+        
+        // Validate required fields
+        if (!name) {
+            errors.push(`Row ${index + 1}: Material name is required`);
+            return;
+        }
+        
+        if (!category) {
+            errors.push(`Row ${index + 1}: Category is required`);
+            return;
+        }
+        
+        // Check for duplicates
+        let duplicate = checkDuplicateName(name);
+        if (duplicate) {
+            let confirmMsg = `⚠️ Row ${index + 1}: "${name}" is very similar to existing material:\n\n` +
+                            `Existing: ${duplicate.name} (ID: ${duplicate.code})\n\n` +
+                            `Skip this material?`;
+            
+            if (!confirm(confirmMsg)) {
+                return; // Skip this material
+            }
+        }
+        
+        // Standardize category (first letter caps)
+        category = category.charAt(0).toUpperCase() + category.slice(1).toLowerCase();
+        
+        // Generate unique ID
+        let id = generateRandomId();
+        while (materials.some(m => m && m.code === id)) {
+            id = generateRandomId();
+        }
+        
+        let newMaterial = {
+            id: Date.now() + index, // Ensure unique IDs
+            code: id,
+            name: name,
+            category: category,
+            stock: stock,
+            unit: unit,
+            remarks: remarks
+        };
+        
+        addedMaterials.push(newMaterial);
+    });
+    
+    // Show errors if any
+    if (errors.length > 0) {
+        alert('❌ Please fix the following errors:\n\n' + errors.join('\n\n'));
+        return;
+    }
+    
+    // Show confirmation
+    if (addedMaterials.length === 0) {
+        alert('❌ No valid materials to add');
+        return;
+    }
+    
+    let confirmMsg = `✅ Add ${addedMaterials.length} material(s)?\n\n` +
+                    addedMaterials.map(m => `${m.name} (${m.category})`).join('\n');
+    
+    if (!confirm(confirmMsg)) {
+        return;
+    }
+    
+    // Add all materials
+    let addedCount = 0;
+    addedMaterials.forEach(material => {
+        materials.push(material);
+        
+        // Add activity
+        activities.unshift({
+            id: Date.now() + Math.random(),
+            action: 'ADD',
+            material_code: material.code,
+            material_name: material.name,
+            quantity: material.stock,
+            timestamp: new Date().toLocaleString()
+        });
+        
+        addedCount++;
+    });
+    
+    saveMaterials();
+    saveActivities();
+    
+    updateTable();
+    updateCategoryFilter();
+    hideAllForms();
+    
+    alert(`✅ Successfully added ${addedCount} material(s)!`);
+    
+    // Reset form to one empty row
+    document.getElementById('materialsContainer').innerHTML = `
+        <div class="material-row" data-row="0">
+            <input type="text" class="material-name" placeholder="Material Name (e.g., 16mm Round Bar)">
+            <input type="text" class="material-category" placeholder="Category (auto-created if new)">
+            <input type="text" class="material-unit" placeholder="Unit (pieces, kg, etc.)" value="pieces">
+            <input type="number" class="material-stock" placeholder="Quantity" value="0">
+            <input type="text" class="material-remarks" placeholder="Remarks (optional)">
+            <button type="button" class="remove-row-btn" onclick="removeMaterialRow(this)" style="display: none;">✗</button>
+        </div>
+    `;
+}
 
 function saveNewMaterial() {
     let name = document.getElementById('newName').value.trim();
     let category = getSelectedCategory();
     let unit = document.getElementById('newUnit').value.trim() || 'pieces';
     let stock = parseInt(document.getElementById('newStock').value) || 0;
+    let remarks = document.getElementById('newRemarks') ? document.getElementById('newRemarks').value.trim() : '';
     
     if (!name) {
         alert('Material name is required');
@@ -1027,7 +1736,8 @@ function saveNewMaterial() {
         name: name,
         category: category,
         stock: stock,
-        unit: unit
+        unit: unit,
+        remarks: remarks
     };
     
     materials.push(newMaterial);
@@ -1053,12 +1763,14 @@ function saveNewMaterial() {
     // Clear form
     document.getElementById('newName').value = '';
     document.getElementById('newStock').value = '0';
+    if (document.getElementById('newRemarks')) document.getElementById('newRemarks').value = '';
 }
 
 // Receive stock 
 function saveReceive() {
     let code = document.getElementById('receiveForm').dataset.code;
     let qty = parseInt(document.getElementById('receiveQty').value);
+    let remarks = document.getElementById('receiveRemarks').value.trim();
     
     if (!qty || qty < 1) {
         alert('Enter valid quantity');
@@ -1074,6 +1786,11 @@ function saveReceive() {
     let oldStock = material.stock;
     material.stock += qty;
     
+    // Update material remarks if provided
+    if (remarks) {
+        material.remarks = remarks;
+    }
+    
     saveMaterials();
     
     // Add activity 
@@ -1085,7 +1802,7 @@ function saveReceive() {
         quantity: qty,
         old_stock: oldStock,
         new_stock: material.stock,
-        note: 'Manual expand',
+        note: remarks || 'Manual expand',
         timestamp: new Date().toLocaleString()
     });
     saveActivities();
@@ -1095,6 +1812,7 @@ function saveReceive() {
     hideAllForms();
     
     document.getElementById('receiveQty').value = '';
+    clearRemarksField('receiveRemarks');
     
     alert(`✅ Added ${qty} ${material.unit}\nNew stock: ${material.stock}`);
 }
@@ -1103,6 +1821,7 @@ function saveReceive() {
 function saveIssue() {
     let code = document.getElementById('issueForm').dataset.code;
     let qty = parseInt(document.getElementById('issueQty').value);
+    let remarks = document.getElementById('issueRemarks').value.trim()
     
     if (!qty || qty < 1) {
         alert('Enter valid quantity');
@@ -1123,6 +1842,11 @@ function saveIssue() {
     let oldStock = material.stock;
     material.stock -= qty;
     
+    // Update material remarks if provided
+    if (remarks) {
+        material.remarks = remarks;
+    }
+    
     saveMaterials();
     
     // Add activity (simplified)
@@ -1134,7 +1858,7 @@ function saveIssue() {
         quantity: qty,
         old_stock: oldStock,
         new_stock: material.stock,
-        note: 'Manual modify',
+        note: remarks || 'Manual modify',
         timestamp: new Date().toLocaleString()
     });
     saveActivities();
@@ -1144,54 +1868,9 @@ function saveIssue() {
     hideAllForms();
     
     document.getElementById('issueQty').value = '';
+    clearRemarksField('issueRemarks');
     
     alert(`✅ Removed ${qty} ${material.unit}\nNew stock: ${material.stock}`);
-}
-
-// Stock count adjustment
-function saveCount() {
-    let code = document.getElementById('countForm').dataset.code;
-    let actual = parseInt(document.getElementById('countQty').value);
-    let reason = 'Physical count adjustment'; 
-    
-    if (isNaN(actual) || actual < 0) {
-        alert('Enter valid quantity');
-        return;
-    }
-    
-    let material = materials.find(m => m.code === code);
-    if (!material) {
-        alert('Material not found');
-        return;
-    }
-    
-    let oldStock = material.stock;
-    let difference = actual - oldStock;
-    material.stock = actual;
-    
-    saveMaterials();
-    
-    // Add activity
-    activities.unshift({
-        id: Date.now(),
-        action: 'COUNT',
-        material_code: code,
-        material_name: material.name,
-        quantity: difference,
-        old_stock: oldStock,
-        new_stock: actual,
-        note: reason,
-        timestamp: new Date().toLocaleString()
-    });
-    saveActivities();
-    
-    updateTable();
-    selectMaterial(code);
-    hideAllForms();
-    
-    document.getElementById('countQty').value = '';
-    
-    alert(`✅ Stock updated\nOld: ${oldStock} → New: ${actual}`);
 }
 
 // Delete material
@@ -1235,15 +1914,6 @@ function printSingleBarcode(code, name) {
     `;
     document.getElementById('barcodeModal').classList.remove('hidden');
 }
-
-function printBarcode() {
-    if (!selectedMaterial) {
-        alert('Please select a material first');
-        return;
-    }
-    printSingleBarcode(selectedMaterial.code, selectedMaterial.name);
-}
-
 function closeBarcodeModal() {
     document.getElementById('barcodeModal').classList.add('hidden');
 }
@@ -1392,71 +2062,118 @@ function toggleCamera() {
         console.log('Camera scanner stopped');
     }
 }
-
-function onScanError(errorMessage) {
-    // Ignore most errors - they're usually just "no barcode found"
+// Process scan add (auto adds 1)
+function processScanAdd(material) {
+    // Default quantity is 1
+    let qty = 1;
+    
+    // Update stock
+    let oldStock = material.stock;
+    material.stock += qty;
+    
+    // Save
+    saveMaterials();
+    
+    // Add activity
+    activities.unshift({
+        id: Date.now(),
+        action: 'RECEIVE',
+        material_code: material.code,
+        material_name: material.name,
+        quantity: qty,
+        old_stock: oldStock,
+        new_stock: material.stock,
+        note: 'Scan receive',
+        timestamp: new Date().toLocaleString()
+    });
+    saveActivities();
+    
+    // Update UI
+    updateTable();
+    selectMaterial(material.code);
+    
+    // Show feedback
+    showScanFeedback(`✅ Added ${qty} ${material.unit}`, material.stock);
+    
+    // Vibrate on mobile
+    try { if (navigator.vibrate) navigator.vibrate(50); } catch (e) {}
 }
 
+// Process scan remove (auto removes 1)
+function processScanRemove(material) {
+    // Default quantity is 1
+    let qty = 1;
+    
+    if (material.stock < qty) {
+        showScanFeedback(`❌ Only ${material.stock} available`, null, 'error');
+        return;
+    }
+    
+    // Update stock
+    let oldStock = material.stock;
+    material.stock -= qty;
+    
+    // Save
+    saveMaterials();
+    
+    // Add activity
+    activities.unshift({
+        id: Date.now(),
+        action: 'ISSUE',
+        material_code: material.code,
+        material_name: material.name,
+        quantity: qty,
+        old_stock: oldStock,
+        new_stock: material.stock,
+        note: 'Scan issue',
+        timestamp: new Date().toLocaleString()
+    });
+    saveActivities();
+    
+    // Update UI
+    updateTable();
+    selectMaterial(material.code);
+    
+    // Show feedback
+    showScanFeedback(`✅ Removed ${qty} ${material.unit}`, material.stock);
+    
+    // Vibrate on mobile
+    try { if (navigator.vibrate) navigator.vibrate(50); } catch (e) {}
+}
 // ==================== CAMERA SCAN HANDLER ====================
 function onScanSuccess(decodedText, decodedResult) {
-    console.log('Scan success:', decodedText);
+    console.log('Scan success:', decodedText, 'Mode:', scanMode);
     
     // Stop camera
     if (isScanning) {
         toggleCamera();
     }
     
-    // Put in search box
+    // Put in search box (optional)
     document.getElementById('searchInput').value = decodedText;
     
     // Find the material
     let material = materials.find(m => m.code.toUpperCase() === decodedText.toUpperCase());
     
     if (material) {
-        // Material found - automatically add 1 to stock
-        let oldStock = material.stock;
-        material.stock += 1;
-        
-        // 💾 SAVE IMMEDIATELY TO LOCALSTORAGE (works offline)
-        localStorage.setItem('materials', JSON.stringify(materials));
-        
-        // Also save to Firebase if online (but don't wait for it)
-        if (typeof dbRef !== 'undefined' && navigator.onLine) {
-            dbRef.set(materials).catch(err => console.log('Offline - will sync later'));
+        // Material found - process based on current mode
+        if (scanMode === 'add') {
+            processScanAdd(material);
+        } else {
+            processScanRemove(material);
         }
-        
-        // Add activity to memory
-        activities.unshift({
-            id: Date.now(),
-            action: 'RECEIVE',
-            material_code: material.code,
-            material_name: material.name,
-            quantity: 1,
-            old_stock: oldStock,
-            new_stock: material.stock,
-            note: 'Scan receive',
-            timestamp: new Date().toLocaleString()
-        });
-        
-        // 💾 SAVE ACTIVITIES IMMEDIATELY
-        localStorage.setItem('activities', JSON.stringify(activities));
-        
-        // Update UI
-        updateTable();
-        selectMaterial(material.code);
-        
-        // Show quick visual feedback
-        showScanFeedback(material.name, material.stock);
-        
-        // Vibrate on mobile
-        try {
-            if (navigator.vibrate) navigator.vibrate(50);
-        } catch (e) {}
-        
     } else {
         // Material not found
         console.log('Material not found:', decodedText);
         showScanFeedback('Unknown barcode', null, 'error');
+        
+        // Ask if they want to add as new material
+        setTimeout(() => {
+            if (confirm(`Material not found: ${decodedText}\n\nAdd as new material?`)) {
+                document.getElementById('newName').value = decodedText;
+                showAddForm();
+            }
+        }, 500);
     }
 }
 
@@ -1469,27 +2186,42 @@ function onScanError(errorMessage) {
 function showScanFeedback(message, newStock, type = 'success') {
     let toast = document.createElement('div');
     
+    // Base styles for all toasts
+    let baseStyles = {
+        position: 'fixed',
+        bottom: '20px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        color: 'white',
+        padding: '12px 24px',
+        borderRadius: '50px',
+        fontWeight: 'bold',
+        zIndex: '9999',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+        animation: 'slideUp 0.3s, fadeOut 0.5s 1.5s forwards'
+    };
+    
+    // Set message and type-specific styles
     if (type === 'success') {
-        toast.textContent = `✅ ${message} +1 (${newStock})`;
-        toast.style.background = '#28a745';
-    } else {
+        toast.textContent = `✅ ${message}`;
+        Object.assign(toast.style, { background: '#28a745' });
+    } else if (type === 'error') {
         toast.textContent = `❌ ${message}`;
-        toast.style.background = '#dc3545';
+        Object.assign(toast.style, { background: '#dc3545' });
+    } else if (type === 'info') {
+        toast.textContent = `ℹ️ ${message}`;
+        Object.assign(toast.style, { 
+            background: '#000000',  // Bright yellow
+            color: '#ffffff',          // Black text
+            border: '3px solid white',
+            fontSize: '18px',
+            fontWeight: 'bold',
+            boxShadow: '0 4px 15px rgba(0,0,0,0.5)'
+        });
     }
     
-    toast.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        color: white;
-        padding: 12px 24px;
-        border-radius: 50px;
-        font-weight: bold;
-        z-index: 9999;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        animation: slideUp 0.3s, fadeOut 0.5s 1.5s forwards;
-    `;
+    // Apply all base styles
+    Object.assign(toast.style, baseStyles);
     
     document.body.appendChild(toast);
     
@@ -1570,12 +2302,262 @@ document.addEventListener('DOMContentLoaded', function() {
     setupButtonHandlers();
     setupScannerDetection();
     setupEnhancedSearch();
+    checkLoginStatus();
+    initScanMode()
     document.getElementById('searchInput').focus();
     
     // Run cleanup after a short delay
     setTimeout(cleanupCategories, 1000);
 });
 
+
+// ==================== SETTINGS FUNCTIONS ====================
+
+// Toggle settings panel
+function toggleSettings() {
+    if (currentUser !== 'admin') {
+        alert('Admin access required');
+        return;
+    }
+    
+    let settingsSection = document.getElementById('settingsSection');
+    if (settingsSection.style.display === 'none') {
+        settingsSection.style.display = 'block';
+        loadCategoryList();
+        loadUnitList();
+    } else {
+        settingsSection.style.display = 'none';
+    }
+}
+
+// Load category list
+function loadCategoryList() {
+    let categories = getAllCategories();
+    let html = '';
+    
+    categories.forEach(cat => {
+        let count = materials.filter(m => m.category === cat).length;
+        html += `
+            <div>
+                <span><strong>${cat}</strong> (${count} items)</span>
+                <div>
+                    <button onclick="editCategory('${cat}')" class="edit-cat-btn">✏️ Edit</button>
+                    <button onclick="deleteCategory('${cat}')" class="delete-cat-btn">✗</button>
+                </div>
+            </div>
+        `;
+    });
+    
+    document.getElementById('categoryList').innerHTML = html || '<p style="color: #666; text-align: center;">No categories yet</p>';
+}
+
+// Load unit list
+function loadUnitList() {
+    let units = getAllUnits();
+    let html = '';
+    
+    units.forEach(unit => {
+        let count = materials.filter(m => m.unit === unit).length;
+        html += `
+            <div>
+                <span><strong>${unit}</strong> (${count} items)</span>
+                <div>
+                    <button onclick="editUnit('${unit}')" class="edit-unit-btn">✏️ Edit</button>
+                    <button onclick="deleteUnit('${unit}')" class="delete-unit-btn">✗</button>
+                </div>
+            </div>
+        `;
+    });
+    
+    document.getElementById('unitList').innerHTML = html || '<p style="color: #666; text-align: center;">No units yet</p>';
+}
+
+// Get all unique categories
+function getAllCategories() {
+    let cats = new Set();
+    materials.forEach(m => {
+        if (m && m.category) {
+            cats.add(m.category);
+        }
+    });
+    return Array.from(cats).sort();
+}
+
+// Get all unique units
+function getAllUnits() {
+    let units = new Set();
+    materials.forEach(m => {
+        if (m && m.unit) {
+            units.add(m.unit);
+        }
+    });
+    return Array.from(units).sort();
+}
+
+// Add new category
+function addNewCategory() {
+    let newCat = document.getElementById('newCategoryName').value.trim();
+    if (!newCat) {
+        alert('Please enter a category name');
+        return;
+    }
+    
+    // Capitalize first letter
+    newCat = newCat.charAt(0).toUpperCase() + newCat.slice(1).toLowerCase();
+    
+    // Check if exists
+    let exists = getAllCategories().some(c => c.toLowerCase() === newCat.toLowerCase());
+    if (exists) {
+        alert('Category already exists');
+        return;
+    }
+    
+    document.getElementById('newCategoryName').value = '';
+    loadCategoryList();
+    updateCategoryFilter();
+    alert(`✅ Category "${newCat}" added`);
+}
+
+// Add new unit
+function addNewUnit() {
+    let newUnit = document.getElementById('newUnitName').value.trim().toLowerCase();
+    if (!newUnit) {
+        alert('Please enter a unit name');
+        return;
+    }
+    
+    // Check if exists
+    let exists = getAllUnits().some(u => u.toLowerCase() === newUnit.toLowerCase());
+    if (exists) {
+        alert('Unit already exists');
+        return;
+    }
+    
+    document.getElementById('newUnitName').value = '';
+    loadUnitList();
+    alert(`✅ Unit "${newUnit}" added`);
+}
+
+// Edit category
+function editCategory(oldCat) {
+    let newCat = prompt('Edit category name:', oldCat);
+    if (!newCat || newCat === oldCat) return;
+    
+    newCat = newCat.charAt(0).toUpperCase() + newCat.slice(1).toLowerCase();
+    
+    // Check if new name exists
+    let exists = getAllCategories().some(c => c.toLowerCase() === newCat.toLowerCase() && c !== oldCat);
+    if (exists) {
+        alert('Category name already exists');
+        return;
+    }
+    
+    // Update all materials
+    materials = materials.map(m => {
+        if (m && m.category === oldCat) {
+            m.category = newCat;
+        }
+        return m;
+    });
+    
+    saveMaterials();
+    updateTable();
+    updateCategoryFilter();
+    loadCategoryList();
+    alert(`✅ Category updated: ${oldCat} → ${newCat}`);
+}
+
+// Edit unit
+function editUnit(oldUnit) {
+    let newUnit = prompt('Edit unit name:', oldUnit);
+    if (!newUnit || newUnit === oldUnit) return;
+    
+    newUnit = newUnit.toLowerCase();
+    
+    // Check if new name exists
+    let exists = getAllUnits().some(u => u.toLowerCase() === newUnit.toLowerCase() && u !== oldUnit);
+    if (exists) {
+        alert('Unit name already exists');
+        return;
+    }
+    
+    // Update all materials
+    materials = materials.map(m => {
+        if (m && m.unit === oldUnit) {
+            m.unit = newUnit;
+        }
+        return m;
+    });
+    
+    saveMaterials();
+    updateTable();
+    loadUnitList();
+    alert(`✅ Unit updated: ${oldUnit} → ${newUnit}`);
+}
+
+// Delete category
+function deleteCategory(cat) {
+    let count = materials.filter(m => m.category === cat).length;
+    
+    if (count > 0) {
+        if (!confirm(`⚠️ Category "${cat}" is used by ${count} material(s).\n\nReassign these materials to another category?`)) {
+            return;
+        }
+        
+        // Get all other categories
+        let otherCats = getAllCategories().filter(c => c !== cat);
+        if (otherCats.length === 0) {
+            alert('No other categories to reassign to');
+            return;
+        }
+        
+        // Ask which category to reassign to
+        let catList = otherCats.map((c, i) => `${i+1}. ${c}`).join('\n');
+        let choice = prompt(`Reassign to which category?\n\n${catList}\n\nEnter category name:`);
+        
+        if (!choice) return;
+        
+        // Find matching category
+        let targetCat = otherCats.find(c => c.toLowerCase() === choice.toLowerCase());
+        if (!targetCat) {
+            alert('Category not found');
+            return;
+        }
+        
+        // Reassign all materials
+        materials = materials.map(m => {
+            if (m && m.category === cat) {
+                m.category = targetCat;
+            }
+            return m;
+        });
+        
+        saveMaterials();
+        updateTable();
+        updateCategoryFilter();
+        loadCategoryList();
+        alert(`✅ Items reassigned to "${targetCat}"`);
+    } else {
+        if (confirm(`Delete category "${cat}"?`)) {
+            loadCategoryList();
+            alert(`✅ Category "${cat}" deleted`);
+        }
+    }
+}
+
+// Delete unit
+function deleteUnit(unit) {
+    let count = materials.filter(m => m.unit === unit).length;
+    
+    if (count > 0) {
+        alert(`⚠️ Cannot delete "${unit}" because it is used by ${count} material(s).`);
+    } else {
+        if (confirm(`Delete unit "${unit}"?`)) {
+            loadUnitList();
+            alert(`✅ Unit "${unit}" deleted`);
+        }
+    }
+}
 // ==================== GLOBAL FUNCTIONS ====================
 
 window.showAddForm = showAddForm;
@@ -1583,6 +2565,9 @@ window.showReceiveForm = showReceiveForm;
 window.showIssueForm = showIssueForm;
 window.showCountForm = showCountForm;
 window.saveNewMaterial = saveNewMaterial;
+window.saveBulkMaterials = saveBulkMaterials;
+window.addMaterialRow = addMaterialRow;
+window.removeMaterialRow = removeMaterialRow;
 window.saveReceive = saveReceive;
 window.saveIssue = saveIssue;
 window.saveCount = saveCount;
@@ -1590,13 +2575,19 @@ window.deleteMaterial = deleteMaterial;
 window.selectMaterial = selectMaterial;
 window.searchMaterial = searchMaterial;
 window.filterMaterials = filterMaterials;
-window.printBarcode = printBarcode;
 window.printSingleBarcode = printSingleBarcode;
 window.closeBarcodeModal = closeBarcodeModal;
 window.printBarcodeLabel = printBarcodeLabel;
 window.hideAllForms = hideAllForms;
 window.toggleCamera = toggleCamera;
 window.closeSelectedMaterial = closeSelectedMaterial;
+window.toggleSettings = toggleSettings;
+window.addNewCategory = addNewCategory;
+window.addNewUnit = addNewUnit;
+window.editCategory = editCategory;
+window.editUnit = editUnit;
+window.deleteCategory = deleteCategory;
+window.deleteUnit = deleteUnit;
 
 // ==================== REPAIR EXISTING DATA ====================
 function repairData() {
@@ -1609,7 +2600,7 @@ function repairData() {
         
         // Add missing fields with defaults
         if (!fixed.code) {
-            fixed.code = Math.floor(100000 + Math.random() * 900000).toString();
+            fixed.code = Math.floor(1 + Math.random() * 999).toString();
             }
         if (!fixed.name) fixed.name = 'Unknown', needsFix = true;
         if (!fixed.category) fixed.category = 'Steel', needsFix = true;
