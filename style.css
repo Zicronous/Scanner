@@ -248,6 +248,26 @@ body {
     justify-content: flex-end;
 }
 
+.btn-save {
+    padding: 12px 25px;
+    background: #28a745;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.btn-cancel {
+    padding: 12px 25px;
+    background: #6c757d;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
 /* Bulk material add styles */
 .material-row {
     display: grid;
@@ -316,26 +336,6 @@ body {
 
 .btn-add-row:hover {
     background: #218838;
-}
-
-.btn-save {
-    padding: 12px 25px;
-    background: #28a745;
-    color: white;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 16px;
-}
-
-.btn-cancel {
-    padding: 12px 25px;
-    background: #6c757d;
-    color: white;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 16px;
 }
 
 /* Materials Table */
@@ -474,7 +474,7 @@ tr:hover {
     float: right;
     font-size: 28px;
     font-weight: bold;
-    cursor: pointer;    
+    cursor: pointer;
 }
 
 .modal .close {
@@ -546,6 +546,7 @@ tr:hover {
     margin: 20px auto;
     display: none;
 }
+
 .close-button {
     position: absolute;
     top: 15px;
@@ -592,10 +593,17 @@ tr:hover {
 @media screen and (max-width: 480px) {
     .header {
         flex-direction: column;
-        gap: 10px;
+        gap: 15px;
         text-align: center;
         padding: 15px;
+        align-items: stretch;
     }
+    .header > div {
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    gap: 10px !important;
+    width: 100% !important;
+}
 
     .header h1 {
         font-size: 20px;
@@ -605,11 +613,22 @@ tr:hover {
         flex-wrap: wrap;
         justify-content: center;
         gap: 8px;
+        width: 100%;
     }
 
     .stats span {
         font-size: 12px;
         padding: 5px 10px;
+    }
+
+    #settingsToggle {
+        width: 100%;
+        margin: 5px 0;
+    }
+
+    #userBadge {
+        width: 100%;
+        justify-content: center;
     }
 
     .search-box {
@@ -643,6 +662,10 @@ tr:hover {
     .scan-hint {
         text-align: center;
         font-size: 12px;
+    }
+
+    .quick-actions {
+        grid-template-columns: 1fr;
     }
 
     .quick-actions button {
@@ -706,6 +729,52 @@ tr:hover {
     .form-actions button {
         width: 100%;
         padding: 12px;
+    }
+
+    /* Bulk add form mobile */
+    .material-row {
+        grid-template-columns: 1fr !important;
+        gap: 10px;
+        padding: 15px;
+    }
+
+    .material-row input,
+    .material-row .material-stock,
+    .material-row .material-unit {
+        width: 100% !important;
+        margin-bottom: 5px;
+    }
+
+    .remove-row-btn {
+        width: 100%;
+        height: 40px;
+        border-radius: 5px;
+        margin-top: 5px;
+    }
+
+    .btn-add-row,
+    .form-actions button {
+        width: 100%;
+        margin: 5px 0;
+    }
+
+    #materialsContainer {
+        margin-bottom: 15px;
+    }
+
+    /* Settings panel mobile */
+    #settingsSection > div > div {
+        grid-template-columns: 1fr !important;
+    }
+
+    #categoryList div, #unitList div {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    #categoryList div > div, #unitList div > div {
+        align-self: flex-end;
     }
 
     /* Table */
@@ -1236,6 +1305,7 @@ tr:hover {
     10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
     20%, 40%, 60%, 80% { transform: translateX(5px); }
 }
+
 /* Scan Mode Toggle */
 .scan-mode-toggle {
     display: flex;
@@ -1383,80 +1453,4 @@ input:checked + .slider:before {
         opacity: 1;
         transform: translateY(0);
     }
-}
-
-/* Mobile fixes for bulk add form and settings */
-.material-row {
-    grid-template-columns: 1fr !important;
-    gap: 8px;
-    padding: 12px;
-}
-
-.material-row input,
-.material-row .material-stock,
-.material-row .material-unit {
-    width: 100% !important;
-}
-
-.remove-row-btn {
-    width: 30px;
-    height: 30px;
-    margin-top: 5px;
-    align-self: center;
-}
-
-.btn-add-row {
-    width: 100%;
-    margin-bottom: 10px;
-}
-
-/* Settings panel mobile layout */
-#settingsSection > div > div {
-    grid-template-columns: 1fr !important;
-}
-
-#categoryList div, #unitList div {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-}
-
-#categoryList div > div, #unitList div > div {
-    align-self: flex-end;
-}
-
-/* Quick actions buttons on mobile */
-.quick-actions {
-    grid-template-columns: 1fr;
-}
-
-/* Mobile header fixes */
-.header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 15px;
-    padding: 15px;
-}
-
-.header > div {
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 10px;
-}
-
-.stats {
-    width: 100%;
-    justify-content: center;
-}
-
-#settingsToggle {
-    width: 100%;
-    margin: 5px 0;
-    order: 3; /* Move settings button below stats and user badge */
-}
-
-#userBadge {
-    width: 100%;
-    justify-content: center;
-    order: 2;
 }
