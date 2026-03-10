@@ -680,7 +680,7 @@ function saveActivities() {
 function generateRandomId() {
     // Generate random 1-3 digit number
     let randomId = Math.floor(1 + Math.random() * 999); // 1-999
-    return randomId.toString();
+    return randomId.toString().padStart(3, '0');
 }
 // Get stock status
 function getStockStatus(stock) {
@@ -2558,6 +2558,8 @@ function deleteUnit(unit) {
         }
     }
 }
+
+
 // ==================== GLOBAL FUNCTIONS ====================
 
 window.showAddForm = showAddForm;

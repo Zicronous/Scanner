@@ -1384,3 +1384,79 @@ input:checked + .slider:before {
         transform: translateY(0);
     }
 }
+
+/* Mobile fixes for bulk add form and settings */
+.material-row {
+    grid-template-columns: 1fr !important;
+    gap: 8px;
+    padding: 12px;
+}
+
+.material-row input,
+.material-row .material-stock,
+.material-row .material-unit {
+    width: 100% !important;
+}
+
+.remove-row-btn {
+    width: 30px;
+    height: 30px;
+    margin-top: 5px;
+    align-self: center;
+}
+
+.btn-add-row {
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+/* Settings panel mobile layout */
+#settingsSection > div > div {
+    grid-template-columns: 1fr !important;
+}
+
+#categoryList div, #unitList div {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+#categoryList div > div, #unitList div > div {
+    align-self: flex-end;
+}
+
+/* Quick actions buttons on mobile */
+.quick-actions {
+    grid-template-columns: 1fr;
+}
+
+/* Mobile header fixes */
+.header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 15px;
+    padding: 15px;
+}
+
+.header > div {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+}
+
+.stats {
+    width: 100%;
+    justify-content: center;
+}
+
+#settingsToggle {
+    width: 100%;
+    margin: 5px 0;
+    order: 3; /* Move settings button below stats and user badge */
+}
+
+#userBadge {
+    width: 100%;
+    justify-content: center;
+    order: 2;
+}
