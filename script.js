@@ -2063,17 +2063,14 @@ function toggleCamera() {
 }
 // Process scan add (auto adds 1)
 function processScanAdd(material) {
-    // Default quantity is 1
-    let qty = 1;
+    let qty = parseInt(document.getElementById('scanQuantity').value) || 1;
+    if (qty < 1) qty = 1;
     
-    // Update stock
     let oldStock = material.stock;
     material.stock += qty;
     
-    // Save
     saveMaterials();
     
-    // Add activity
     activities.unshift({
         id: Date.now(),
         action: 'RECEIVE',
@@ -2087,17 +2084,13 @@ function processScanAdd(material) {
     });
     saveActivities();
     
-    // Update UI
     updateTable();
     selectMaterial(material.code);
     
-    // Show feedback
     showScanFeedback(`✅ Added ${qty} ${material.unit}`, material.stock);
     
-    // Vibrate on mobile
     try { if (navigator.vibrate) navigator.vibrate(50); } catch (e) {}
 }
-
 // Process scan remove (auto removes 1)
 function processScanRemove(material) {
     // Default quantity is 1

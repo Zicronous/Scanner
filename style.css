@@ -880,6 +880,15 @@ tr:hover {
         padding: 10px 15px;
         bottom: 10px;
     }
+    .mobile-scan-controls > div:has(#scanQuantity) {
+    width: 100%;
+    justify-content: center;
+}
+#scanQuantity {
+    width: 100% !important;
+    max-width: 100px;
+    margin: 0 auto;
+}
 }
 
 /* Tablets (481px to 768px) */

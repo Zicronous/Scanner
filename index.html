@@ -160,7 +160,7 @@
             <div class="mobile-scan-controls">
     <button id="cameraBtn" class="btn-camera" onclick="toggleCamera()">📷 Scan with Camera</button>
     
-    <!-- ADD THIS TOGGLE -->
+    <!-- ADD/REMOVE TOGGLE -->
     <div class="scan-mode-toggle">
         <span class="mode-label" id="modeLabel" style="margin-right: 10px;">Mode: <strong id="modeText">Add</strong></span>
         <label class="switch">
@@ -168,6 +168,11 @@
             <span class="slider round"></span>
         </label>
         <span class="mode-icon" id="modeIcon" style="margin-left: 10px;">➕</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 5px;">
+        <label for="scanQuantity" style="font-size: 14px;">Qty:</label>
+        <input type="number" id="scanQuantity" value="1" min="1" style="width: 70px; padding: 5px; border: 1px solid #ccc; border-radius: 4px;">
     </div>
     
     <span class="scan-hint">USB scanner: Just click box and scan</span>
