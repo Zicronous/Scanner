@@ -408,7 +408,6 @@ function toggleScanMode() {
     // Show quick feedback
     showScanFeedback(`Mode: ${scanMode.toUpperCase()}`, null, 'info');
 }
-
 // Initialize scan mode toggle
 function initScanMode() {
     // Set default state (Add mode)
@@ -616,7 +615,7 @@ function initDatabase() {
     
     updateTable();
     updateStats();
-    
+    updateCategoryFilter(); 
     // Listen for changes from Firebase (other devices)
     if (typeof dbRef !== 'undefined') {
         dbRef.on('value', (snapshot) => {
@@ -2406,15 +2405,45 @@ function addNewCategory() {
     newCat = newCat.charAt(0).toUpperCase() + newCat.slice(1).toLowerCase();
     
     // Check if exists
-    let exists = getAllCategories().some(c => c.toLowerCase() === newCat.toLowerCase());
+    let exists = materials.some(m => m.category.toLowerCase() === newCat.toLowerCase());
     if (exists) {
         alert('Category already exists');
         return;
     }
     
+    let id = generateRandomId();
+    while (materials.some(m => m && m.code === id)) {
+        id = generateRandomId();
+    }
+     let newMaterial = {
+        id: Date.now(),
+        code: id,
+        name: `[New Category] ${newCat}`,   // easily identifiable
+        category: newCat,
+        stock: 0,
+        unit: 'pieces',
+        remarks: 'Placeholder – you can rename or delete this item.'
+    };
+
+    materials.push(newMaterial);
+    saveMaterials();
+
+    // (Optional) record activity
+    activities.unshift({
+        id: Date.now(),
+        action: 'ADD',
+        material_code: id,
+        material_name: newMaterial.name,
+        quantity: 0,
+        timestamp: new Date().toLocaleString()
+    });
+    saveActivities();
+
     document.getElementById('newCategoryName').value = '';
     loadCategoryList();
     updateCategoryFilter();
+    updateTable();
+
     alert(`✅ Category "${newCat}" added`);
 }
 
