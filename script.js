@@ -7,6 +7,10 @@ let html5QrcodeScanner = null;
 let isScanning = false;
 let activities = [];
 let scanMode = 'add'; 
+
+function escapeHtmlAttr(str) {
+    return str.replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+}
 // ==================== WEEKLY REPORT FUNCTIONS ====================
 
 // Show weekly report modal
@@ -738,17 +742,19 @@ function updateTable() {
         
         // View button - always show if logged in
         if (currentUser) {
-            actions += `<button onclick="selectMaterial('${code}')" class="action-btn edit-btn">View</button>`;
+            actions += `<button onclick='selectMaterial(${JSON.stringify(code)})' class="action-btn edit-btn">View</button>`;
         }
         
         // Print button - always show if logged in
         if (currentUser) {
-            actions += `<button onclick="printSingleBarcode('${code}', '${name}')" class="action-btn print-btn">🖨️</button>`;
+            // use JSON.stringify to safely quote the values
+            actions += `<button onclick='printSingleBarcode(${JSON.stringify(code)}, ${JSON.stringify(name)})' class="action-btn print-btn">🖨️</button>`;
+
         }
         
         // Delete button - only for admin
         if (currentUser === 'admin') {
-            actions += `<button onclick="deleteMaterial('${code}')" class="action-btn delete-btn">✗</button>`;
+           actions += `<button onclick='deleteMaterial(${JSON.stringify(code)})' class="action-btn delete-btn">✗</button>`;
         }
         
         actions += `</div>`;
@@ -761,7 +767,7 @@ function updateTable() {
         html += `
             <tr>
                 <td><strong>${code}</strong></td>
-                <td>${name}
+                <td><span class="editable-name" data-code="${code}">${name}</span>
                 ${(currentUser === 'admin' && m.remarks) ? `<br><small style="color: #666; font-style: italic;">📝 ${m.remarks}</small>` : ''}
                 </td>
                 <td>${category}</td>
@@ -982,9 +988,9 @@ function showSearchResults(results, searchTerm) {
         
 // In showSearchResults, replace that whole block with just:
 let actions = `<div class="action-buttons">`;
-actions += `<button onclick="selectMaterial('${code}')" class="action-btn edit-btn">View</button>`;
-actions += `<button onclick="printSingleBarcode('${code}', '${name}')" class="action-btn print-btn">🖨️</button>`;
-actions += `</div>`;
+actions += `<button onclick='selectMaterial(${JSON.stringify(code)})' class="action-btn edit-btn">View</button>`;
+actions += `<button onclick='printSingleBarcode(${JSON.stringify(code)}, ${JSON.stringify(name)})' class="action-btn print-btn">🖨️</button>`;
+actions += `<button onclick='deleteMaterial(${JSON.stringify(code)})' class="action-btn delete-btn">✗</button>`;
 
 // If not logged in, show login prompt
 if (!currentUser) {
@@ -995,7 +1001,7 @@ html += `
     <tr>
         <td><strong>${code}</strong></td>
         <td>
-            ${name}
+            <span class="editable-name" data-code="${code}">${highlightedName || name}</span>
             ${m.remarks ? `<br><small style="color: #666; font-style: italic;">📝 ${m.remarks}</small>` : ''}
         </td>
         <td>${category}</td>
@@ -1106,8 +1112,8 @@ if (currentUser === 'admin') {
             <div class="material-actions">
                 <button onclick="showEditCategoryForm('${material.code}')" class="btn-edit" style="background: #fd7e14; color: white;">📁 Change Category</button>
                 <button onclick="showEditUnitForm('${material.code}')" class="btn-edit" style="background: #20c997; color: white;">📏 Change Unit</button>
-                <button onclick="printSingleBarcode('${material.code}', '${material.name}')" class="btn-print">🖨️ Print Label</button>
-                <button onclick="deleteMaterial('${material.code}')" class="btn-delete">🗑️ Delete</button>
+                <button onclick='printSingleBarcode(${JSON.stringify(material.code)}, ${JSON.stringify(material.name)})' class="btn-print">🖨️ Print Label</button>
+                <button onclick='deleteMaterial(${JSON.stringify(material.code)})' class="btn-delete">🗑️ Delete</button>
             </div>
         </div>
     `;
@@ -1117,7 +1123,7 @@ if (currentUser === 'admin') {
         <div style="margin: 15px 0; padding: 10px; background: #f8f9fa; border-radius: 8px;">
             <h3 style="margin-bottom: 10px; color: #495057;">🖨️ Actions</h3>
             <div class="material-actions">
-                <button onclick="printSingleBarcode('${material.code}', '${material.name}')" class="btn-print">🖨️ Print Label</button>
+                <button onclick='printSingleBarcode(${JSON.stringify(material.code)}, ${JSON.stringify(material.name)})' class="btn-print">🖨️ Print Label</button>
             </div>
         </div>
     `;
@@ -1900,15 +1906,93 @@ function deleteMaterial(code) {
     alert(`✅ Deleted: ${material ? material.name : code}`);
 }
 
+// ==================== INLINE EDIT HELPERS ====================
+
+// attach dblclick handler to table body to enable editing of material names
+function setupInlineEditing() {
+    let tableBody = document.getElementById('tableBody');
+    if (!tableBody) return;
+
+    tableBody.addEventListener('dblclick', function(e) {
+        let target = e.target;
+        if (!target.classList.contains('editable-name')) return;
+        let code = target.dataset.code;
+        if (!code) return;
+
+        let oldName = target.textContent.trim();
+        let input = document.createElement('input');
+        input.type = 'text';
+        input.value = oldName;
+        input.className = 'inline-name-input';
+        target.innerHTML = '';
+        target.appendChild(input);
+        input.focus();
+        input.select();
+
+        function finishEdit(save) {
+            let newName = save ? input.value.trim() : oldName;
+            if (newName === '') newName = oldName;
+
+            if (save && newName !== oldName) {
+                // duplicate check
+                let dup = checkDuplicateName(newName, code);
+                if (dup && dup.code !== code) {
+                    if (!confirm(`⚠️ "${newName}" is similar to existing material: ${dup.name} (${dup.code}). Use anyway?`)) {
+                        newName = oldName;
+                    }
+                }
+                if (newName !== oldName) {
+                    let mat = materials.find(m => m.code === code);
+                    if (mat) {
+                        mat.name = newName;
+                        saveMaterials();
+                        activities.unshift({
+                            id: Date.now(),
+                            action: 'EDIT_NAME',
+                            material_code: code,
+                            material_name: newName,
+                            old_value: oldName,
+                            new_value: newName,
+                            timestamp: new Date().toLocaleString()
+                        });
+                        saveActivities();
+                    }
+                }
+            }
+
+            // restore display
+            target.textContent = newName === '' ? oldName : newName;
+            updateTable();
+        }
+
+        input.addEventListener('blur', function() { finishEdit(true); });
+        input.addEventListener('keydown', function(ev) {
+            if (ev.key === 'Enter') {
+                input.blur();
+            } else if (ev.key === 'Escape') {
+                finishEdit(false);
+            }
+        });
+    });
+}
+
+
 // ==================== BARCODE FUNCTIONS ====================
 
 function printSingleBarcode(code, name) {
+    // ensure we have a value to print
+    if (!code) {
+        alert('❌ No barcode data available');
+        return;
+    }
+    // some codes may contain characters that break the URL (spaces, &, ? etc.)
+    let encoded = encodeURIComponent(code);
     document.getElementById('barcodePreview').innerHTML = `
         <div style="text-align:center;">
-            <img src="https://barcode.tec-it.com/barcode.ashx?data=${code}&code=Code128&dpi=96&imagetype=png" 
+            <img src="https://barcode.tec-it.com/barcode.ashx?data=${encoded}&code=Code128&dpi=96&imagetype=png" 
                  style="max-width:100%;" alt="Barcode">
             <h4>${code}</h4>
-            <p>${name}</p>
+            <p>${name || ''}</p>
         </div>
     `;
     document.getElementById('barcodeModal').classList.remove('hidden');
@@ -2093,22 +2177,19 @@ function processScanAdd(material) {
 }
 // Process scan remove (auto removes 1)
 function processScanRemove(material) {
-    // Default quantity is 1
-    let qty = 1;
-    
+    let qty = parseInt(document.getElementById('scanQuantity').value) || 1;
+    if (qty < 1) qty = 1;
+
     if (material.stock < qty) {
         showScanFeedback(`❌ Only ${material.stock} available`, null, 'error');
         return;
     }
-    
-    // Update stock
+
     let oldStock = material.stock;
     material.stock -= qty;
-    
-    // Save
+
     saveMaterials();
-    
-    // Add activity
+
     activities.unshift({
         id: Date.now(),
         action: 'ISSUE',
@@ -2121,15 +2202,12 @@ function processScanRemove(material) {
         timestamp: new Date().toLocaleString()
     });
     saveActivities();
-    
-    // Update UI
+
     updateTable();
     selectMaterial(material.code);
-    
-    // Show feedback
+
     showScanFeedback(`✅ Removed ${qty} ${material.unit}`, material.stock);
-    
-    // Vibrate on mobile
+
     try { if (navigator.vibrate) navigator.vibrate(50); } catch (e) {}
 }
 // ==================== CAMERA SCAN HANDLER ====================
@@ -2296,6 +2374,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setupEnhancedSearch();
     checkLoginStatus();
     initScanMode()
+    setupInlineEditing();
     document.getElementById('searchInput').focus();
     
     // Run cleanup after a short delay
